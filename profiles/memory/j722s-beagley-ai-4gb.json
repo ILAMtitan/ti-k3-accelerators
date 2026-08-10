@@ -1,0 +1,271 @@
+{
+  "board": "beagley-ai",
+  "ddr_gib": 4,
+  "dts_regions": {
+    "c7x-ddr-heaps-hi@880000000": [
+      "0x880000000",
+      "0x20000000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-c71-dma-memory@ad000000": [
+      "0xAD000000",
+      "0x00100000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-c71_0-memory@ad100000": [
+      "0xAD100000",
+      "0x03F00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-c71_1-dma-memory@b1000000": [
+      "0xB1000000",
+      "0x00100000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-c71_1-memory@b1100000": [
+      "0xB1100000",
+      "0x03F00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-core-heap-memory-lo@b5000000": [
+      "0xB5000000",
+      "0x02C00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-dma-memory@a7000000": [
+      "0xA7000000",
+      "0x06000000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-dma-memory@a0000000": [
+      "0xA0000000",
+      "0x00100000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-dma-memory@a1000000": [
+      "0xA1000000",
+      "0x00100000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-dma-memory@a2000000": [
+      "0xA2000000",
+      "0x00100000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-memory@a0100000": [
+      "0xA0100000",
+      "0x00F00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-memory@a1100000": [
+      "0xA1100000",
+      "0x00F00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-memory@a2100000": [
+      "0xA2100000",
+      "0x01F00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-rtos-ipc-memory-region@a5000000": [
+      "0xA5000000",
+      "0x02000000",
+      "shared-dma-pool"
+    ],
+    "vision_apps_shared-memories": [
+      "0xC0000000",
+      "0x20000000",
+      "dma-heap-carveout"
+    ]
+  },
+  "format": 2,
+  "generated_defines": {
+    "APP_FILEIO_MEM_ADDR": "0xA7800000",
+    "APP_FILEIO_MEM_SIZE": "0x00400000",
+    "APP_LOG_MEM_ADDR": "0xA7C00000",
+    "APP_LOG_MEM_SIZE": "0x00040000",
+    "DDR_C7X_1_LOCAL_HEAP_NON_CACHEABLE_PHYS_ADDR": "0x880000000",
+    "DDR_C7X_1_LOCAL_HEAP_NON_CACHEABLE_SIZE": "0x04000000",
+    "DDR_C7X_1_LOCAL_HEAP_PHYS_ADDR": "0x888000000",
+    "DDR_C7X_1_LOCAL_HEAP_SIZE": "0x04000000",
+    "DDR_C7X_1_SCRATCH_NON_CACHEABLE_PHYS_ADDR": "0x884000000",
+    "DDR_C7X_1_SCRATCH_NON_CACHEABLE_SIZE": "0x04000000",
+    "DDR_C7X_1_SCRATCH_PHYS_ADDR": "0x88C000000",
+    "DDR_C7X_1_SCRATCH_SIZE": "0x04000000",
+    "DDR_C7X_2_LOCAL_HEAP_NON_CACHEABLE_PHYS_ADDR": "0x890000000",
+    "DDR_C7X_2_LOCAL_HEAP_NON_CACHEABLE_SIZE": "0x04000000",
+    "DDR_C7X_2_LOCAL_HEAP_PHYS_ADDR": "0x898000000",
+    "DDR_C7X_2_LOCAL_HEAP_SIZE": "0x04000000",
+    "DDR_C7X_2_SCRATCH_NON_CACHEABLE_PHYS_ADDR": "0x894000000",
+    "DDR_C7X_2_SCRATCH_NON_CACHEABLE_SIZE": "0x04000000",
+    "DDR_C7X_2_SCRATCH_PHYS_ADDR": "0x89C000000",
+    "DDR_C7X_2_SCRATCH_SIZE": "0x04000000",
+    "DDR_C7x_1_DTS_ADDR": "0xAD100000",
+    "DDR_C7x_1_DTS_SIZE": "0x03F00000",
+    "DDR_C7x_1_IPC_ADDR": "0xAD000000",
+    "DDR_C7x_1_IPC_SIZE": "0x00100000",
+    "DDR_C7x_2_DTS_ADDR": "0xB1100000",
+    "DDR_C7x_2_DTS_SIZE": "0x03F00000",
+    "DDR_C7x_2_IPC_ADDR": "0xB1000000",
+    "DDR_C7x_2_IPC_SIZE": "0x00100000",
+    "DDR_MCU1_0_LOCAL_HEAP_ADDR": "0xB5000000",
+    "DDR_MCU1_0_LOCAL_HEAP_SIZE": "0x00800000",
+    "DDR_MCU2_0_LOCAL_HEAP_ADDR": "0xB5800000",
+    "DDR_MCU2_0_LOCAL_HEAP_SIZE": "0x02000000",
+    "DDR_MCU2_0_VISS_CONFIG_HEAP_ADDR": "0xB7800000",
+    "DDR_MCU2_0_VISS_CONFIG_HEAP_SIZE": "0x00400000",
+    "DDR_SHARED_MEM_ADDR": "0xC0000000",
+    "DDR_SHARED_MEM_PHYS_ADDR": "0xC0000000",
+    "DDR_SHARED_MEM_PHYS_SIZE": "0x20000000",
+    "DDR_SHARED_MEM_SIZE": "0x20000000",
+    "IPC_VRING_MEM_ADDR": "0xA5000000",
+    "IPC_VRING_MEM_SIZE": "0x01000000",
+    "TIOVX_LOG_RT_MEM_ADDR": "0xA6000000",
+    "TIOVX_LOG_RT_MEM_SIZE": "0x01000000",
+    "TIOVX_OBJ_DESC_MEM_ADDR": "0xA7000000",
+    "TIOVX_OBJ_DESC_MEM_SIZE": "0x00800000"
+  },
+  "generated_dts_control_span": {
+    "end_expression": "APP_LOG_MEM_ADDR + APP_LOG_MEM_SIZE",
+    "expected_end": "0xA7C40000",
+    "expected_size": "0x01C40000",
+    "expected_start": "0xA6000000",
+    "start_define": "TIOVX_LOG_RT_MEM_ADDR"
+  },
+  "generated_dts_low_heap_span": {
+    "end_expression": "DDR_MCU2_0_VISS_CONFIG_HEAP_ADDR + DDR_MCU2_0_VISS_CONFIG_HEAP_SIZE",
+    "expected_end": "0xB7C00000",
+    "expected_size": "0x02C00000",
+    "expected_start": "0xB5000000",
+    "start_define": "DDR_MCU1_0_LOCAL_HEAP_ADDR"
+  },
+  "generated_dts_reference": "TI Firmware Builder 11.02.01.03 BUILD_EDGEAI=no generated reserved-memory partition; A600 and B500 spans are derived from app_mem_map.h, while the kernel-facing map keeps the wider A500/A700 reservation and reserves the complete B500-B7B low-core heap range",
+  "generated_dts_regions": {
+    "c7x-ddr-heaps-hi@880000000": [
+      "0x880000000",
+      "0x20000000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-c71-dma-memory@ad000000": [
+      "0xAD000000",
+      "0x00100000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-c71_0-memory@ad100000": [
+      "0xAD100000",
+      "0x03F00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-c71_1-dma-memory@b1000000": [
+      "0xB1000000",
+      "0x00100000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-c71_1-memory@b1100000": [
+      "0xB1100000",
+      "0x03F00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-core-heap-memory-lo@b5000000": [
+      "0xB5000000",
+      "0x02C00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-dma-memory@a6000000": [
+      "0xA6000000",
+      "0x01C40000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-dma-memory@a0000000": [
+      "0xA0000000",
+      "0x00100000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-dma-memory@a2000000": [
+      "0xA2000000",
+      "0x00100000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-memory@a0100000": [
+      "0xA0100000",
+      "0x00F00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-memory@a2100000": [
+      "0xA2100000",
+      "0x01F00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-virtual-eth-buffers@b8200000": [
+      "0xB8200000",
+      "0x00E00000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-r5f-virtual-eth-queues@b8000000": [
+      "0xB8000000",
+      "0x00200000",
+      "shared-dma-pool"
+    ],
+    "vision-apps-rtos-ipc-memory-region@a5000000": [
+      "0xA5000000",
+      "0x01000000",
+      "shared-dma-pool"
+    ],
+    "vision_apps_shared-memories": [
+      "0xC0000000",
+      "0x20000000",
+      "dma-heap-carveout"
+    ]
+  },
+  "id": "j722s-beagley-ai-4gb-r73341",
+  "legacy_id": "openhd-j722s-4gb-evm-matched-v2",
+  "project": "ti-k3-accelerators",
+  "reference": "Hardware-validated BeagleY-AI Vision Apps EVM contract, corrected to reserve the complete source-generated low-core heap span through the VISS configuration heap",
+  "regions": {
+    "c7x_1_firmware": [
+      "0xAD100000",
+      "0x03F00000"
+    ],
+    "c7x_1_linux_ipc": [
+      "0xAD000000",
+      "0x00100000"
+    ],
+    "c7x_2_firmware": [
+      "0xB1100000",
+      "0x03F00000"
+    ],
+    "c7x_2_linux_ipc": [
+      "0xB1000000",
+      "0x00100000"
+    ],
+    "c7x_high_heaps_physical": [
+      "0x880000000",
+      "0x20000000"
+    ],
+    "dma_shared_virtual_and_physical": [
+      "0xC0000000",
+      "0x20000000"
+    ],
+    "low_core_heaps": [
+      "0xB5000000",
+      "0x02C00000"
+    ],
+    "main_r5_firmware": [
+      "0xA2100000",
+      "0x01F00000"
+    ],
+    "main_r5_linux_ipc": [
+      "0xA2000000",
+      "0x00100000"
+    ],
+    "rtos_ipc_and_log": [
+      "0xA5000000",
+      "0x02000000"
+    ],
+    "vision_apps_dma_pool": [
+      "0xA7000000",
+      "0x06000000"
+    ]
+  },
+  "soc": "j722s"
+}

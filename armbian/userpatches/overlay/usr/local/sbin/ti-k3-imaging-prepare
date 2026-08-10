@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+mode="${TI_K3_CAMERA_MODE:-test-wave5}"
+case "$mode" in imx219|imx219-ti-isp|imx708|imx708-raw) ;; *) exit 0;; esac
+/usr/local/sbin/ti-k3-rpmsg-ready --wait "${TI_K3_RPMSG_READY_TIMEOUT_SECONDS:-10}"
+/usr/local/sbin/ti-k3-dma-heap-prepare
+mkdir -p /run/ti-k3
+command -v media-ctl >/dev/null
+if command -v beagle-camera-setup >/dev/null 2>&1; then beagle-camera-setup || true; fi
+/usr/local/sbin/ti-k3-camera-setup || true
+[[ -r /run/ti-k3/camera.env ]] && source /run/ti-k3/camera.env
+if [[ "$mode" == imx219 || "$mode" == imx219-ti-isp ]]; then
+  /usr/local/sbin/ti-k3-configure-imx219-graph --verify-stream
+fi
+if [[ "$mode" == imx708-raw ]]; then exit 0; fi
+if ! /usr/local/sbin/ti-k3-gst-plugin-has-feature tiovx tiovxisp; then
+  echo "tiovxisp is unavailable. Stage the matched TI Edge AI imaging stack." >&2
+  exit 1
+fi
+: "${TI_K3_CAMERA_VIDEO_DEVICE:?camera video device unresolved}"
+: "${TI_K3_CAMERA_SUBDEV_DEVICE:?camera subdevice unresolved}"
+: "${TI_K3_CAMERA_DCC_VISS:?VISS DCC unresolved}"
+: "${TI_K3_CAMERA_DCC_2A:?2A DCC unresolved}"
+[[ -e "$TI_K3_CAMERA_VIDEO_DEVICE" ]] || { echo "Missing camera capture device: $TI_K3_CAMERA_VIDEO_DEVICE" >&2; exit 1; }
+[[ -e "$TI_K3_CAMERA_SUBDEV_DEVICE" ]] || { echo "Missing camera subdevice: $TI_K3_CAMERA_SUBDEV_DEVICE" >&2; exit 1; }
+[[ -s "$TI_K3_CAMERA_DCC_VISS" ]] || { echo "Missing VISS DCC: $TI_K3_CAMERA_DCC_VISS" >&2; exit 1; }
+[[ -s "$TI_K3_CAMERA_DCC_2A" ]] || { echo "Missing 2A DCC: $TI_K3_CAMERA_DCC_2A" >&2; exit 1; }
+# ti-k3-find-camera-devices atomically publishes the complete camera contract,
+# including platform-owned DCC and I/O defaults. Do not append a second partial
+# representation here.
+echo "Prepared $mode: video=$TI_K3_CAMERA_VIDEO_DEVICE subdev=$TI_K3_CAMERA_SUBDEV_DEVICE"

@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export LC_ALL=C
+
+RELEASE_ID=ti-11.02.01-j722s-r73341
+RUNTIME_BASE=/opt/ti-k3/runtime
+DEST="${RUNTIME_BASE}/releases/${RELEASE_ID}"
+CURRENT="${RUNTIME_BASE}/current"
+SOURCE_META=/var/lib/ti-k3/ti-release-bundle.env
+GST_GOOD_VERSION=1.24.10
+GST_GOOD_SHA256=fce748fa66d7a8ee1fb261489e59d01e3fa787623d6d5c35068416fe7cd0acb3
+GST_GOOD_BASE=https://gstreamer.freedesktop.org/src/gst-plugins-good
+JOBS=${TI_K3_IMAGE_BUILD_JOBS:-$(nproc)}
+BUILD_ROOT=/tmp/ti-k3-production-gstreamer-build
+[[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid build job count: $JOBS" >&2; exit 2; }
+for cmd in curl git meson ninja python3 pkg-config sha256sum readelf ldd cmake find gst-inspect-1.0; do
+  command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
+done
+[[ -s "$SOURCE_META" ]] || { echo "TI release-bundle provenance is missing" >&2; exit 1; }
+# shellcheck source=/dev/null
+source "$SOURCE_META"
+[[ "${format:-}" =~ ^[12]$ && "${build_mode:-}" == ti-release-binary && "${image_target:-}" == tisdk-adas-image ]] || {
+  echo "Unsupported TI release-bundle provenance" >&2; exit 1;
+}
+[[ "${rootfs_archive_sha256:-}" =~ ^[0-9a-f]{64}$ ]] || { echo "Invalid TI rootfs checksum provenance" >&2; exit 1; }
+[[ -x /usr/local/sbin/ti-k3-resolve-unique-library ]] || { echo "TI library resolver is missing" >&2; exit 1; }
+
+VENDOR_PLUGIN=$(
+  /usr/local/sbin/ti-k3-resolve-unique-library \
+    "TI release system libgsttiovx plugin" \
+    'libgsttiovx.so*' gstreamer-1.0 \
+    /usr/lib /usr/local/lib /lib
+)
+vendor_elf_header=$(readelf -hW "$VENDOR_PLUGIN" 2>&1) || {
+  printf '%s\n' "$vendor_elf_header" >&2
+  exit 1
+}
+grep -Eq 'Class:[[:space:]]+ELF64' <<<"$vendor_elf_header" || { echo "TI release TIOVX plugin is not ELF64" >&2; exit 1; }
+grep -Eq 'Type:[[:space:]]+DYN' <<<"$vendor_elf_header" || { echo "TI release TIOVX plugin is not ET_DYN" >&2; exit 1; }
+grep -Eq 'Machine:[[:space:]]+AArch64' <<<"$vendor_elf_header" || { echo "TI release TIOVX plugin is not AArch64" >&2; exit 1; }
+SOURCE_CORE=$(
+  /usr/local/sbin/ti-k3-resolve-unique-library \
+    "TI release libgsttiovx core" \
+    'libgsttiovx-1.0.so.1*' - \
+    /usr/lib /usr/local/lib /lib
+)
+SOURCE_CORE_DIR=$(dirname "$SOURCE_CORE")
+SOURCE_PLUGIN_DIR=$(dirname "$VENDOR_PLUGIN")
+
+# TI's release plugin may depend on yaml-cpp 0.8, absent from Ubuntu Noble.
+YAML_CPP_REPO=https://github.com/jbeder/yaml-cpp.git
+YAML_CPP_COMMIT=f7320141120f720aecc4c32be25586e7da9eb978
+if readelf -d "$VENDOR_PLUGIN" 2>/dev/null | grep -Fq 'Shared library: [libyaml-cpp.so.0.8]'; then
+  if ! ldconfig -p | grep -Fq 'libyaml-cpp.so.0.8'; then
+    yaml_src=/opt/ti-k3-src/yaml-cpp-0.8.0; yaml_build=/tmp/ti-k3-yaml-cpp-0.8.0-build
+    rm -rf "$yaml_src" "$yaml_build"
+    git init -q "$yaml_src"; git -C "$yaml_src" remote add origin "$YAML_CPP_REPO"
+    git -C "$yaml_src" fetch -q --depth 1 origin "$YAML_CPP_COMMIT"
+    git -C "$yaml_src" checkout -q --detach FETCH_HEAD
+    [[ $(git -C "$yaml_src" rev-parse HEAD) == "$YAML_CPP_COMMIT" ]]
+    cmake -S "$yaml_src" -B "$yaml_build" -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=/usr \
+      -DYAML_BUILD_SHARED_LIBS=ON \
+      -DYAML_CPP_BUILD_TESTS=OFF \
+      -DYAML_CPP_BUILD_TOOLS=OFF \
+      -DYAML_CPP_BUILD_CONTRIB=OFF \
+      -DYAML_CPP_FORMAT_SOURCE=OFF
+    cmake --build "$yaml_build" --parallel "$JOBS"; cmake --install "$yaml_build"; ldconfig
+  fi
+  ldconfig -p | grep -F 'libyaml-cpp.so.0.8' >/dev/null
+fi
+
+# Prefer the exact TI release plugin. Rebuild the pinned compatibility source
+# only when the release binary does not register every platform-required factory.
+PROBE=/tmp/ti-k3-tiovx-vendor-probe
+rm -rf "$PROBE"; install -d -m 0755 "$PROBE/ti/gstreamer-1.0"
+install -m 0755 "$VENDOR_PLUGIN" "$PROBE/ti/gstreamer-1.0/libgsttiovx.so"
+cp -a "$SOURCE_CORE_DIR"/libgsttiovx-1.0.so* "$PROBE/ti/"
+vendor_complete=yes
+for feature in tiovxisp tiovxmultiscaler tiovxmemalloc; do
+  TI_K3_GST_RUNTIME_CURRENT="$PROBE" /usr/local/sbin/ti-k3-gst-plugin-has-feature tiovx "$feature" >/dev/null 2>&1 || vendor_complete=no
+done
+if [[ $vendor_complete == yes ]]; then
+  SOURCE_PLUGIN=$VENDOR_PLUGIN
+  TIOVX_BUILD_MODE=official-ti-release-plugin
+  COMPAT_META=
+  COMPAT_RUNTIME_DIR=
+  printf 'Using official TI release TIOVX plugin; required ISP, multiscaler, and memalloc factories are complete\n'
+else
+  /usr/local/sbin/ti-k3-build-tiovx-compat-plugin
+  SOURCE_PLUGIN=/opt/ti-k3/tiovx-compat-plugin/libgsttiovx.so
+  COMPAT_META=/opt/ti-k3/tiovx-compat-plugin/SOURCE-BUILD.env
+  COMPAT_RUNTIME_DIR=/opt/ti-k3/tiovx-compat-plugin/ti-2a-runtime
+  [[ -s "$SOURCE_PLUGIN" && -s "$COMPAT_META" ]] || { echo "TI TIOVX compatibility build is missing" >&2; exit 1; }
+  TIOVX_BUILD_MODE=source-built-tiovx-compatibility-plugin
+  printf 'Official TI plugin lacks required factories; using compatibility build\n'
+fi
+
+rm -rf "$DEST" "$BUILD_ROOT" "$PROBE"
+install -d -m 0755 "$DEST/ti/gstreamer-1.0" "$DEST/gstreamer/gstreamer-1.0" "$BUILD_ROOT"
+install -d -m 0755 /usr/local/lib/ti-k3-debug-backups
+cp -a "$VENDOR_PLUGIN" /usr/local/lib/ti-k3-debug-backups/libgsttiovx.so.vendor
+install -m 0755 "$SOURCE_PLUGIN" "$DEST/ti/gstreamer-1.0/libgsttiovx.so"
+cp -a "$SOURCE_CORE_DIR"/libgsttiovx-1.0.so* "$DEST/ti/"
+[[ -z $COMPAT_META ]] || cp -a "$COMPAT_META" "$DEST/TIOVX-COMPAT-SOURCE-BUILD.env"
+if [[ -n ${COMPAT_RUNTIME_DIR:-} && -d $COMPAT_RUNTIME_DIR ]]; then
+  cp -a "$COMPAT_RUNTIME_DIR"/. "$DEST/ti/"
+fi
+TI_PLUGIN="$DEST/ti/gstreamer-1.0/libgsttiovx.so"
+TI_CORE=$(find -L "$DEST/ti" -maxdepth 1 -type f -name 'libgsttiovx-1.0.so.1*' -print -quit)
+[[ -s "$TI_PLUGIN" && -s "$TI_CORE" ]] || { echo "Private TI runtime was not assembled" >&2; exit 1; }
+
+PRIVATE_RELOCATION_REPORT=/tmp/ti-k3-private-tiovx-relocations.txt
+if ! env LD_LIBRARY_PATH="$DEST/ti:$SOURCE_CORE_DIR" ldd -r "$TI_PLUGIN" >"$PRIVATE_RELOCATION_REPORT" 2>&1; then
+  cat "$PRIVATE_RELOCATION_REPORT" >&2; exit 1;
+fi
+if grep -Eqi 'not found|undefined symbol' "$PRIVATE_RELOCATION_REPORT"; then cat "$PRIVATE_RELOCATION_REPORT" >&2; exit 1; fi
+for feature in tiovxisp tiovxmultiscaler tiovxmemalloc; do
+  TI_K3_GST_RUNTIME_CURRENT="$DEST" /usr/local/sbin/ti-k3-gst-plugin-has-feature tiovx "$feature" >/dev/null || {
+    echo "Selected private TI plugin lacks required feature: $feature" >&2; exit 1;
+  }
+done
+
+GST_WORK="$BUILD_ROOT/gst-plugins-good"
+install -d -m 0755 "$GST_WORK"
+cd "$GST_WORK"
+archive="gst-plugins-good-${GST_GOOD_VERSION}.tar.xz"
+curl --fail --location --retry 5 --connect-timeout 20 "$GST_GOOD_BASE/$archive" -o "$archive"
+actual_archive_sha=$(sha256sum "$archive" | awk '{print $1}')
+[[ "$actual_archive_sha" == "$GST_GOOD_SHA256" ]] || {
+  echo "gst-plugins-good archive SHA-256 mismatch: expected=$GST_GOOD_SHA256 actual=$actual_archive_sha" >&2
+  exit 1
+}
+tar -xf "$archive"
+GST_SRC="$GST_WORK/gst-plugins-good-${GST_GOOD_VERSION}"
+V4L2_OBJECT="$GST_SRC/sys/v4l2/gstv4l2object.c"
+export V4L2_OBJECT
+python3 - <<'PY'
+import os
+from pathlib import Path
+p=Path(os.environ['V4L2_OBJECT']); s=p.read_text()
+old="""  /* Prefer the non-contiguous if supported */
+  v4l2object->prefered_non_contiguous = TRUE;
+
+  if (fourcc_nc)
+    fmt = gst_v4l2_object_get_format_from_fourcc (v4l2object, fourcc_nc);
+  else if (fourcc == 0)
+    goto unhandled_format;
+
+  if (fmt == NULL) {
+    fmt = gst_v4l2_object_get_format_from_fourcc (v4l2object, fourcc);
+    v4l2object->prefered_non_contiguous = FALSE;
+  }
+"""
+new="""  /* Prefer contiguous formats for TI TIOVX one-DMABUF NV12 output. */
+  v4l2object->prefered_non_contiguous = FALSE;
+
+  if (fourcc)
+    fmt = gst_v4l2_object_get_format_from_fourcc (v4l2object, fourcc);
+  else if (fourcc_nc == 0)
+    goto unhandled_format;
+
+  if (fmt == NULL) {
+    fmt = gst_v4l2_object_get_format_from_fourcc (v4l2object, fourcc_nc);
+    v4l2object->prefered_non_contiguous = TRUE;
+  }
+"""
+if s.count(old) != 1:
+    raise SystemExit(f'Expected one V4L2 format-selection block, found {s.count(old)}')
+p.write_text(s.replace(old,new,1))
+PY
+GST_BUILD="$GST_SRC/build"
+meson setup "$GST_BUILD" "$GST_SRC" --buildtype=release --wrap-mode=nodownload -Dauto_features=disabled -Dv4l2=enabled
+meson compile -C "$GST_BUILD" -j "$JOBS"
+V4L2_PLUGIN="$GST_BUILD/sys/v4l2/libgstvideo4linux2.so"
+[[ -s "$V4L2_PLUGIN" ]] || { echo "V4L2 plugin was not produced" >&2; exit 1; }
+install -m 0755 "$V4L2_PLUGIN" "$DEST/gstreamer/gstreamer-1.0/libgstvideo4linux2.so"
+! ldd "$DEST/gstreamer/gstreamer-1.0/libgstvideo4linux2.so" | grep -F 'not found'
+
+
+cat >"$DEST/RELEASE" <<META
+release=2026.07.31-r12.1.0-alpha4
+runtime_id=${RELEASE_ID}
+created=$(date --iso-8601=seconds)
+tiovx_build_mode=${TIOVX_BUILD_MODE}
+ti_linux_release=${release:-unknown}
+ti_linux_machine=${machine:-unknown}
+ti_linux_image_target=${image_target:-unknown}
+ti_rootfs_archive=${rootfs_archive:-unknown}
+ti_rootfs_archive_sha256=${rootfs_archive_sha256:-unknown}
+vendor_plugin_sha256=$(sha256sum "$VENDOR_PLUGIN" | awk '{print $1}')
+selected_plugin_sha256=$(sha256sum "$SOURCE_PLUGIN" | awk '{print $1}')
+source_core_sha256=$(sha256sum "$SOURCE_CORE" | awk '{print $1}')
+runtime_parallel_jobs=${JOBS}
+gst_plugins_good_version=${GST_GOOD_VERSION}
+gst_plugins_good_sha256=$(sha256sum "$GST_WORK/$archive" | awk '{print $1}')
+camera=IMX219
+camera_input=1920x1080_RAW8_30
+isp=tiovxisp_VPAC_VISS
+scaler=tiovxmultiscaler
+tiovxisp_available=yes
+META
+(
+  cd "$DEST"
+  find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+  sha256sum -c SHA256SUMS >/dev/null
+)
+install -d -m 0755 "$RUNTIME_BASE/releases" /etc/ti-k3 /var/cache/ti-k3/gstreamer
+rm -f "$RUNTIME_BASE/current.new"
+ln -s "releases/$RELEASE_ID" "$RUNTIME_BASE/current.new"
+mv -Tf "$RUNTIME_BASE/current.new" "$CURRENT"
+cat >/etc/ti-k3/gstreamer.env <<'ENV'
+LD_LIBRARY_PATH=/opt/ti-k3/runtime/current/ti
+GST_PLUGIN_PATH_1_0=/opt/ti-k3/runtime/current/gstreamer/gstreamer-1.0:/opt/ti-k3/runtime/current/ti/gstreamer-1.0
+ENV
+chmod 0644 /etc/ti-k3/gstreamer.env
+
+# Keep exactly one active TIOVX plugin/core location to avoid registry ambiguity.
+rm -f "$SOURCE_PLUGIN_DIR"/libgsttiovx.so*
+rm -f "$SOURCE_CORE_DIR"/libgsttiovx-1.0.so*
+ldconfig
+printf 'Published TI K3 production GStreamer runtime: %s\n' "$(readlink -f "$CURRENT")"

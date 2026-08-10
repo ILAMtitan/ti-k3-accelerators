@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Hardware-validated BeagleY-AI 4 GiB Vision Apps EVM memory map.
+ *
+ * This is the hardware-validated R7.33.4.1 hardware-validated firmware/runtime contract used by the
+ * matched vision_apps_evm firmware. Keep this include after the board's
+ * original reserved-memory and remoteproc declarations.
+ */
+
+/ {
+	dma_buf_phys {
+		compatible = "ti,dma-buf-phys";
+	};
+};
+
+&reserved_memory {
+	/delete-node/ r5f-dma-memory@a0000000;
+	/delete-node/ r5f-memory@a0100000;
+	/delete-node/ mcu-r5fss-dma-memory-region@a1000000;
+	/delete-node/ mcu-r5fss-memory-region@a1100000;
+	/delete-node/ main-r5fss-dma-memory-region@a2000000;
+	/delete-node/ main-r5fss-memory-region@a2100000;
+	/delete-node/ c7x-dma-memory@a3000000;
+	/delete-node/ c7x-memory@a3100000;
+	/delete-node/ c7x-dma-memory@a4000000;
+	/delete-node/ c7x-memory@a4100000;
+	/delete-node/ ipc-memories@a5000000;
+
+	vision_apps_wkup_r5fss0_core0_dma_memory_region: vision-apps-r5f-dma-memory@a0000000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xa0000000 0x00 0x00100000>;
+		no-map;
+	};
+	vision_apps_wkup_r5fss0_core0_memory_region: vision-apps-r5f-memory@a0100000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xa0100000 0x00 0x00f00000>;
+		no-map;
+	};
+	vision_apps_mcu_r5fss0_core0_dma_memory_region: vision-apps-r5f-dma-memory@a1000000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xa1000000 0x00 0x00100000>;
+		no-map;
+	};
+	vision_apps_mcu_r5fss0_core0_memory_region: vision-apps-r5f-memory@a1100000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xa1100000 0x00 0x00f00000>;
+		no-map;
+	};
+	vision_apps_main_r5fss0_core0_dma_memory_region: vision-apps-r5f-dma-memory@a2000000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xa2000000 0x00 0x00100000>;
+		no-map;
+	};
+	vision_apps_main_r5fss0_core0_memory_region: vision-apps-r5f-memory@a2100000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xa2100000 0x00 0x01f00000>;
+		no-map;
+	};
+	vision_apps_rtos_ipc_memory_region: vision-apps-rtos-ipc-memory-region@a5000000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xa5000000 0x00 0x02000000>;
+		no-map;
+	};
+	vision_apps_memory_region: vision-apps-dma-memory@a7000000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xa7000000 0x00 0x06000000>;
+		no-map;
+	};
+	vision_apps_c71_0_dma_memory_region: vision-apps-c71-dma-memory@ad000000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xad000000 0x00 0x00100000>;
+		no-map;
+	};
+	vision_apps_c71_0_memory_region: vision-apps-c71_0-memory@ad100000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xad100000 0x00 0x03f00000>;
+		no-map;
+	};
+	vision_apps_c71_1_dma_memory_region: vision-apps-c71_1-dma-memory@b1000000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xb1000000 0x00 0x00100000>;
+		no-map;
+	};
+	vision_apps_c71_1_memory_region: vision-apps-c71_1-memory@b1100000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xb1100000 0x00 0x03f00000>;
+		no-map;
+	};
+	vision_apps_core_heaps_lo: vision-apps-core-heap-memory-lo@b5000000 {
+		compatible = "shared-dma-pool";
+		reg = <0x00 0xb5000000 0x00 0x02c00000>;
+		no-map;
+	};
+	c7x_ddr_heaps_hi: c7x-ddr-heaps-hi@880000000 {
+		compatible = "shared-dma-pool";
+		reg = <0x08 0x80000000 0x00 0x20000000>;
+		no-map;
+	};
+	vision_apps_shared_region: vision_apps_shared-memories {
+		compatible = "dma-heap-carveout";
+		reg = <0x00 0xc0000000 0x00 0x20000000>;
+	};
+};
+
+&wkup_r5fss0_core0 {
+	memory-region = <&vision_apps_wkup_r5fss0_core0_dma_memory_region>,
+			<&vision_apps_wkup_r5fss0_core0_memory_region>;
+};
+&mcu_r5fss0_core0 {
+	memory-region = <&vision_apps_mcu_r5fss0_core0_dma_memory_region>,
+			<&vision_apps_mcu_r5fss0_core0_memory_region>;
+};
+&main_r5fss0_core0 {
+	memory-region = <&vision_apps_main_r5fss0_core0_dma_memory_region>,
+			<&vision_apps_main_r5fss0_core0_memory_region>;
+};
+&c7x_0 {
+	memory-region = <&vision_apps_c71_0_dma_memory_region>,
+			<&vision_apps_c71_0_memory_region>;
+	status = "okay";
+};
+&c7x_1 {
+	memory-region = <&vision_apps_c71_1_dma_memory_region>,
+			<&vision_apps_c71_1_memory_region>;
+	status = "okay";
+};

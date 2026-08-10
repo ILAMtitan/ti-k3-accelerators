@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+prepare=no
+[[ "${1:-}" == "--prepare" ]] && prepare=yes
+mkdir -p /run/ti-k3
+fw=/lib/firmware/cnm/wave521c_k3_codec_fw.bin
+
+[[ -s "${fw}" ]] || { echo "Missing Wave5 firmware: ${fw}" >&2; exit 1; }
+modprobe wave5
+
+cma_kb=$(awk '/CmaTotal:/ {print $2}' /proc/meminfo)
+if (( cma_kb < 131072 )); then
+	echo "WARNING: CMA is only $((cma_kb/1024)) MiB; 256 MiB is recommended" >&2
+fi
+
+rm -f /root/.cache/gstreamer-1.0/registry.*.bin 2>/dev/null || true
+for element in v4l2h264enc v4l2h264dec v4l2h265enc v4l2h265dec; do
+	gst-inspect-1.0 "$element" >/dev/null || { echo "Missing Wave5 GStreamer element: $element" >&2; exit 1; }
+done
+
+encoder=""
+decoder=""
+for dev in /dev/video*; do
+	[[ -e "${dev}" ]] || continue
+	info=$(v4l2-ctl -d "${dev}" -D 2>/dev/null || true)
+	if [[ -z "$encoder" ]] && grep -Eqi 'wave5-enc|Wave5 VPU encoder' <<<"${info}"; then
+		encoder="${dev}"
+	fi
+	if [[ -z "$decoder" ]] && grep -Eqi 'wave5-dec|Wave5 VPU decoder' <<<"${info}"; then
+		decoder="${dev}"
+	fi
+done
+
+if [[ -z "${encoder}" || -z "${decoder}" ]]; then
+	echo "Wave5 codec nodes incomplete: encoder=${encoder:-missing} decoder=${decoder:-missing}" >&2
+	v4l2-ctl --list-devices >&2 || true
+	exit 1
+fi
+
+cat > /run/ti-k3/wave5.env <<EOF
+WAVE5_ENCODER=${encoder}
+WAVE5_DECODER=${decoder}
+EOF
+
+echo "Wave5 encoder: ${encoder}"
+echo "Wave5 decoder: ${decoder}"
+v4l2-ctl -d "${encoder}" --list-ctrls-menus || true
+
+# Optional frequency pinning; ignore when sysfs naming differs.
+if [[ "${TI_K3_WAVE5_PIN_MAX_FREQ:-yes}" == "yes" ]]; then
+	for node in /sys/class/devfreq/*30210000* /sys/class/devfreq/*video-codec*; do
+		[[ -d "${node}" ]] || continue
+		max=$(cat "${node}/max_freq" 2>/dev/null || true)
+		if [[ -n "${max}" && -w "${node}/userspace/set_freq" ]]; then
+			echo "${max}" > "${node}/userspace/set_freq" || true
+		fi
+	done
+fi

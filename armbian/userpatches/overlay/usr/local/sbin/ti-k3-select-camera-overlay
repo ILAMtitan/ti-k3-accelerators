@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ $# -eq 2 ]] || {
+  echo "Usage: $0 imx219|imx708 0|1" >&2
+  exit 2
+}
+sensor=$1
+port=$2
+[[ "$sensor" =~ ^imx(219|708)$ && "$port" =~ ^[01]$ ]] || exit 2
+camera_name="k3-am67a-beagley-ai-csi${port}-${sensor}.dtbo"
+boot_dir=${TI_K3_BOOT_DIR:-/boot}
+
+find_extlinux_path() {
+  local bootroot=$1 name=$2 candidate
+  for candidate in "/overlays/$name" "/dtb/ti/overlay/$name" "/dtb/ti/$name" "/ti/$name"; do
+    [[ -e "${bootroot}${candidate}" ]] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  return 1
+}
+find_uenv_path() {
+  local root=$1 name=$2 candidate
+  for candidate in "ti/overlay/$name" "ti/$name" "$name"; do
+    [[ -e "${root}/dtb/${candidate}" ]] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  return 1
+}
+
+select_extlinux() {
+  local conf=$1
+  local bootroot=${conf%/extlinux/extlinux.conf}
+  local camera_path
+  camera_path=$(find_extlinux_path "$bootroot" "$camera_name") || { echo "Overlay $camera_name was not found below $bootroot" >&2; exit 1; }
+  local backup="${conf}.bak.$(date +%Y%m%d-%H%M%S)" tmp
+  cp -a "$conf" "$backup"; tmp=$(mktemp "${conf}.new.XXXXXX")
+  python3 - "$conf" "$tmp" "$camera_path" <<'PYSEL'
+from pathlib import Path
+import re, sys
+src,dst,camera=sys.argv[1:]
+lines=Path(src).read_text().splitlines(); labels=[i for i,l in enumerate(lines) if re.match(r'^\s*label\s+',l)]
+if not labels: raise SystemExit('extlinux.conf contains no label')
+start=labels[0]; end=labels[1] if len(labels)>1 else len(lines); block=lines[start:end]
+# Remove stale package-managed camera overlays and the incompatible generic
+# J722S EdgeAI overlay. The 4 GiB map is compiled into the base DTB.
+managed=re.compile(r'(?:\S*/)?(?:k3-j722s-edgeai-apps|k3-am67a-beagley-ai-csi[01]-imx(?:219|708))\.dtbo$')
+found=False
+for i,l in enumerate(block):
+ m=re.match(r'^(\s*)fdtoverlays\s+(.*)$',l)
+ if not m: continue
+ tokens=[t for t in m.group(2).split() if not managed.search(t)] + [camera]
+ block[i]=f"{m.group(1)}fdtoverlays {' '.join(dict.fromkeys(tokens))}"; found=True; break
+if not found:
+ indent='      '; pos=1
+ for i,l in enumerate(block):
+  if re.match(r'^\s*(fdt|fdtdir|kernel|linux)\s+',l): indent=re.match(r'^(\s*)',l).group(1); pos=i+1
+ block.insert(pos,f"{indent}fdtoverlays {camera}")
+lines[start:end]=block; Path(dst).write_text('\n'.join(lines)+'\n')
+PYSEL
+  chmod --reference="$conf" "$tmp"; mv -f "$tmp" "$conf"
+  echo "Selected $camera_name in $conf using fdtoverlays; removed stale generic EdgeAI overlay; reboot required. Backup: $backup"
+}
+
+select_uenv() {
+  local conf=$1
+  local root=${conf%/uEnv.txt}
+  local camera_path
+  camera_path=$(find_uenv_path "$root" "$camera_name") || { echo "Overlay $camera_name was not found below ${root}/dtb" >&2; exit 1; }
+  local backup="${conf}.bak.$(date +%Y%m%d-%H%M%S)" tmp
+  cp -a "$conf" "$backup"; tmp=$(mktemp "${conf}.new.XXXXXX")
+  python3 - "$conf" "$tmp" "$camera_path" <<'PYSEL'
+from pathlib import Path
+import re,sys
+src,dst,camera=sys.argv[1:]
+lines=Path(src).read_text().splitlines()
+managed=re.compile(r'^(?:ti/(?:overlay/)?)?(?:k3-j722s-edgeai-apps|k3-am67a-beagley-ai-csi[01]-imx(?:219|708))\.dtbo$')
+found=False
+for i,l in enumerate(lines):
+ m=re.match(r'^\s*name_overlays\s*=\s*(.*)$',l)
+ if not m: continue
+ tokens=[t for t in m.group(1).split() if not managed.match(t)] + [camera]
+ lines[i]=f"name_overlays={' '.join(dict.fromkeys(tokens))}"; found=True; break
+if not found: lines.append(f"name_overlays={camera}")
+Path(dst).write_text('\n'.join(lines)+'\n')
+PYSEL
+  chmod --reference="$conf" "$tmp"; mv -f "$tmp" "$conf"
+  echo "Selected $camera_name in $conf using name_overlays; removed stale generic EdgeAI overlay; reboot required. Backup: $backup"
+}
+
+for c in "$boot_dir/firmware/extlinux/extlinux.conf" "$boot_dir/extlinux/extlinux.conf"; do
+  [[ -f "$c" ]] && { select_extlinux "$c"; exit 0; }
+done
+for c in "$boot_dir/uEnv.txt" "$boot_dir/firmware/uEnv.txt"; do
+  [[ -f "$c" ]] && { select_uenv "$c"; exit 0; }
+done
+echo "No supported boot configuration found under $boot_dir" >&2
+exit 1

@@ -1,0 +1,348 @@
+From 7e1431b0a17b9e72c23ab9d71dbe4f61bdf12014 Mon Sep 17 00:00:00 2001
+From: Bart Basile <b-basile@ti.com>
+Date: Fri, 24 Jul 2026 23:30:00 -0500
+Subject: [PATCH] misc: backport TI DMA-BUF physical address exporter
+
+The TI Edge AI userspace used by the TI K3 accelerator platform still opens /dev/dma-buf-phys
+when importing DMA-BUFs into the Vision Apps/TIOVX remote-processing path.
+The BeagleY-AI memory map already provides the matching ti,dma-buf-phys
+device-tree node, but the current 6.12 kernel no longer carries the legacy
+misc driver.
+
+Backport the TI exporter with the Linux 6.12 void platform remove callback
+and keep it behind CONFIG_DMA_BUF_PHYS. This is a compatibility bridge for
+the pinned TI userspace bundle; it is not enabled for other Armbian boards.
+
+Signed-off-by: Bart Basile <b-basile@ti.com>
+---
+diff --git a/Documentation/devicetree/bindings/misc/ti,dma-buf-phys.yaml b/Documentation/devicetree/bindings/misc/ti,dma-buf-phys.yaml
+new file mode 100644
+index 0000000..b3734da
+--- /dev/null
++++ b/Documentation/devicetree/bindings/misc/ti,dma-buf-phys.yaml
+@@ -0,0 +1,37 @@
++# SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
++%YAML 1.2
++---
++$id: http://devicetree.org/schemas/misc/ti,dma-buf-phys.yaml#
++$schema: http://devicetree.org/meta-schemas/core.yaml#
++
++title: TI DMA-BUF physical-address userspace exporter
++
++maintainers:
++  - Andrew Davis <afd@ti.com>
++
++description: |
++  Driver allowing userspace to attach a physically contiguous DMA-BUF and
++  retrieve the DMA address visible to the exporter device. The device-tree
++  node supplies the DMA/IOMMU context used for the attachment.
++
++properties:
++  compatible:
++    const: ti,dma-buf-phys
++
++  iommus:
++    maxItems: 1
++
++  dma-coherent: true
++
++required:
++  - compatible
++
++additionalProperties: false
++
++examples:
++  - |
++    dma-buf-phys {
++        compatible = "ti,dma-buf-phys";
++    };
++
++...
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index c17f6a7..8e3f017 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -619,6 +619,13 @@ config MARVELL_CN10K_DPI
+ 	  To compile this driver as a module, choose M here: the module
+ 	  will be called mrvl_cn10k_dpi.
+ 
++config DMA_BUF_PHYS
++	tristate "TI DMA-BUF physical address userspace exporter"
++	depends on DMA_SHARED_BUFFER && OF
++	help
++	  Export the DMA address of a physically contiguous DMA-BUF through
++	  the /dev/dma-buf-phys compatibility device used by TI Edge AI.
++
+ config MSPM0_I2C
+ 	tristate "MSPM0 I2C Support"
+ 	depends on I2C
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index 15f10f8..f7b40c9 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -70,5 +70,6 @@ obj-$(CONFIG_TPS6594_ESM)	+= tps6594-esm.o
+ obj-$(CONFIG_TPS6594_PFSM)	+= tps6594-pfsm.o
+ obj-$(CONFIG_NSM)		+= nsm.o
+ obj-$(CONFIG_MARVELL_CN10K_DPI)	+= mrvl_cn10k_dpi.o
++obj-$(CONFIG_DMA_BUF_PHYS)	+= dma-buf-phys.o
+ obj-y				+= keba/
+ obj-$(CONFIG_MSPM0_I2C)		+= mspm0-i2c.o
+diff --git a/drivers/misc/dma-buf-phys.c b/drivers/misc/dma-buf-phys.c
+new file mode 100644
+index 0000000..495d401
+--- /dev/null
++++ b/drivers/misc/dma-buf-phys.c
+@@ -0,0 +1,211 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * DMA-BUF contiguous buffer physical address userspace exporter
++ *
++ * Copyright (C) 2018-2022 Texas Instruments Incorporated
++ * Copyright (C) 2026 BeagleY-AI TI K3 integration contributors
++ */
++
++#include <linux/device.h>
++#include <linux/dma-buf.h>
++#include <linux/dma-mapping.h>
++#include <linux/err.h>
++#include <linux/fs.h>
++#include <linux/kernel.h>
++#include <linux/miscdevice.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/scatterlist.h>
++#include <linux/slab.h>
++#include <linux/uaccess.h>
++
++#include <uapi/linux/dma_buf_phys.h>
++
++#define DEVICE_NAME "dma-buf-phys"
++
++struct dma_buf_phys_priv {
++	struct miscdevice miscdev;
++};
++
++struct dma_buf_phys_file {
++	struct device *dev;
++	struct dma_buf *dma_buf;
++	struct dma_buf_attachment *attachment;
++	struct sg_table *sgt;
++};
++
++static int dma_buf_phys_open(struct inode *inode, struct file *file)
++{
++	struct miscdevice *miscdev = file->private_data;
++	struct dma_buf_phys_file *priv;
++
++	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
++	if (!priv)
++		return -ENOMEM;
++
++	priv->dev = miscdev->this_device;
++	file->private_data = priv;
++
++	return nonseekable_open(inode, file);
++}
++
++static int dma_buf_phys_release(struct inode *inode, struct file *file)
++{
++	struct dma_buf_phys_file *priv = file->private_data;
++
++	if (priv->attachment && priv->sgt)
++		dma_buf_unmap_attachment(priv->attachment, priv->sgt,
++					 DMA_BIDIRECTIONAL);
++	if (priv->dma_buf && priv->attachment)
++		dma_buf_detach(priv->dma_buf, priv->attachment);
++	if (priv->dma_buf)
++		dma_buf_put(priv->dma_buf);
++
++	kfree(priv);
++	return 0;
++}
++
++static int dma_buf_phys_convert(struct dma_buf_phys_file *priv, int fd,
++				u64 *phys)
++{
++	struct device *attach_dev = priv->dev->parent ?: priv->dev;
++	struct dma_buf_attachment *attachment;
++	struct dma_buf *dma_buf;
++	struct sg_table *sgt;
++	int ret;
++
++	dma_buf = dma_buf_get(fd);
++	if (IS_ERR(dma_buf))
++		return PTR_ERR(dma_buf);
++
++	attachment = dma_buf_attach(dma_buf, attach_dev);
++	if (IS_ERR(attachment)) {
++		ret = PTR_ERR(attachment);
++		goto fail_put;
++	}
++
++	sgt = dma_buf_map_attachment(attachment, DMA_BIDIRECTIONAL);
++	if (IS_ERR(sgt)) {
++		ret = PTR_ERR(sgt);
++		goto fail_detach;
++	}
++
++	if (sgt->orig_nents != 1) {
++		dev_err(priv->dev, "DMA-BUF is not physically contiguous\n");
++		ret = -EINVAL;
++		goto fail_unmap;
++	}
++
++	*phys = sg_dma_address(sgt->sgl);
++	priv->dma_buf = dma_buf;
++	priv->attachment = attachment;
++	priv->sgt = sgt;
++
++	return 0;
++
++fail_unmap:
++	dma_buf_unmap_attachment(attachment, sgt, DMA_BIDIRECTIONAL);
++fail_detach:
++	dma_buf_detach(dma_buf, attachment);
++fail_put:
++	dma_buf_put(dma_buf);
++	return ret;
++}
++
++static long dma_buf_phys_ioctl(struct file *file, unsigned int cmd,
++			       unsigned long arg)
++{
++	struct dma_buf_phys_file *priv = file->private_data;
++	struct dma_buf_phys_data data;
++	int ret;
++
++	if (cmd != DMA_BUF_PHYS_IOC_CONVERT)
++		return -ENOTTY;
++
++	/* One pinned attachment per open compatibility-device file. */
++	if (priv->dma_buf)
++		return -EBUSY;
++
++	if (copy_from_user(&data, (void __user *)arg, sizeof(data)))
++		return -EFAULT;
++
++	ret = dma_buf_phys_convert(priv, data.fd, &data.phys);
++	if (ret)
++		return ret;
++
++	if (copy_to_user((void __user *)arg, &data, sizeof(data)))
++		return -EFAULT;
++
++	return 0;
++}
++
++static const struct file_operations dma_buf_phys_fops = {
++	.owner = THIS_MODULE,
++	.open = dma_buf_phys_open,
++	.release = dma_buf_phys_release,
++	.unlocked_ioctl = dma_buf_phys_ioctl,
++#ifdef CONFIG_COMPAT
++	.compat_ioctl = dma_buf_phys_ioctl,
++#endif
++};
++
++static int dma_buf_phys_probe(struct platform_device *pdev)
++{
++	struct dma_buf_phys_priv *priv;
++	struct device *dev = &pdev->dev;
++	int ret;
++
++	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
++	if (!priv)
++		return -ENOMEM;
++
++	platform_set_drvdata(pdev, priv);
++
++	ret = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(64));
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to set DMA mask\n");
++
++	dma_set_max_seg_size(dev, UINT_MAX);
++
++	priv->miscdev.minor = MISC_DYNAMIC_MINOR;
++	priv->miscdev.name = DEVICE_NAME;
++	priv->miscdev.fops = &dma_buf_phys_fops;
++	priv->miscdev.parent = dev;
++
++	ret = misc_register(&priv->miscdev);
++	if (ret)
++		return dev_err_probe(dev, ret,
++				     "unable to register DMA-BUF physical exporter\n");
++
++	dev_info(dev, "registered /dev/%s\n", DEVICE_NAME);
++	return 0;
++}
++
++static void dma_buf_phys_remove(struct platform_device *pdev)
++{
++	struct dma_buf_phys_priv *priv = platform_get_drvdata(pdev);
++
++	misc_deregister(&priv->miscdev);
++}
++
++static const struct of_device_id dma_buf_phys_of_match[] = {
++	{ .compatible = "ti,dma-buf-phys" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, dma_buf_phys_of_match);
++
++static struct platform_driver dma_buf_phys_driver = {
++	.probe = dma_buf_phys_probe,
++	.remove = dma_buf_phys_remove,
++	.driver = {
++		.name = "dma_buf_phys",
++		.of_match_table = dma_buf_phys_of_match,
++	},
++};
++module_platform_driver(dma_buf_phys_driver);
++
++MODULE_AUTHOR("Andrew Davis <afd@ti.com>");
++MODULE_DESCRIPTION("DMA-BUF contiguous buffer physical address userspace exporter");
++MODULE_IMPORT_NS(DMA_BUF);
++MODULE_LICENSE("GPL");
+diff --git a/include/uapi/linux/dma_buf_phys.h b/include/uapi/linux/dma_buf_phys.h
+new file mode 100644
+index 0000000..805ff86
+--- /dev/null
++++ b/include/uapi/linux/dma_buf_phys.h
+@@ -0,0 +1,34 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++/*
++ * DMA-BUF contiguous buffer physical address userspace exporter
++ *
++ * Copyright (C) 2018-2019 Texas Instruments Incorporated
++ */
++
++#ifndef _UAPI_LINUX_DMA_BUF_PHYS_H
++#define _UAPI_LINUX_DMA_BUF_PHYS_H
++
++#include <linux/ioctl.h>
++#include <linux/types.h>
++
++/**
++ * struct dma_buf_phys_data - DMA-BUF conversion request
++ * @fd: DMA-BUF file descriptor
++ * @phys: returned DMA/physical address
++ */
++struct dma_buf_phys_data {
++	__u32 fd;
++	__u64 phys;
++};
++
++#define DMA_BUF_PHYS_IOC_MAGIC 'D'
++
++/**
++ * DMA_BUF_PHYS_IOC_CONVERT - pin and translate a contiguous DMA-BUF
++ *
++ * The attachment is held until the dma-buf-phys file descriptor is closed.
++ */
++#define DMA_BUF_PHYS_IOC_CONVERT \
++	_IOWR(DMA_BUF_PHYS_IOC_MAGIC, 0, struct dma_buf_phys_data)
++
++#endif /* _UAPI_LINUX_DMA_BUF_PHYS_H */
+-- 
+2.43.0

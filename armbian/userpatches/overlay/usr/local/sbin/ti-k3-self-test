@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# TIOVX is intentionally published in a private runtime. Generic tools that
+# invoke gst-inspect/gst-launch must opt into that runtime explicitly rather
+# than globally overriding the distro GStreamer environment.
+if [[ -r /etc/ti-k3/gstreamer.env ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source /etc/ti-k3/gstreamer.env
+  set +a
+fi
+fail=0
+pass(){ echo "PASS: $*"; }
+check(){ if "$@" >/dev/null 2>&1; then pass "$*"; else echo "FAIL: $*" >&2; fail=1; fi; }
+check /usr/local/sbin/ti-k3-memory-map-verify
+check /usr/local/sbin/ti-k3-rpmsg-ready
+check /usr/local/sbin/ti-k3-wave5-verify
+[[ -s /etc/ti-k3/vision-apps-firmware.sha256 ]] && { sha256sum -c /etc/ti-k3/vision-apps-firmware.sha256 >/dev/null && pass 'firmware hashes'; } || { echo 'FAIL: firmware manifest' >&2; fail=1; }
+for e in tiovxisp tiovxmultiscaler v4l2h264enc v4l2h264dec v4l2h265enc v4l2h265dec; do
+  if gst-inspect-1.0 "$e" >/dev/null 2>&1; then pass "GStreamer $e"; else echo "FAIL: GStreamer $e" >&2; fail=1; fi
+done
+exit "$fail"

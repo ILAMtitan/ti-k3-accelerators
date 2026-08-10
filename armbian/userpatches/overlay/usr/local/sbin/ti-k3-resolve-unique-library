@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export LC_ALL=C
+
+usage() {
+  echo "Usage: $0 LABEL NAME_GLOB PARENT_BASENAME_OR_DASH ROOT..." >&2
+  exit 2
+}
+
+(( $# >= 4 )) || usage
+label=$1
+name_glob=$2
+parent_filter=$3
+shift 3
+roots=("$@")
+
+for cmd in find readlink stat sha256sum sort; do
+  command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
+done
+
+raw=$(mktemp)
+canonical=$(mktemp)
+unique=$(mktemp)
+trap 'rm -f "$raw" "$canonical" "$unique"' EXIT
+
+for root in "${roots[@]}"; do
+  [[ -e "$root" ]] || continue
+  find -L "$root" -type f -name "$name_glob" -print 2>/dev/null || true
+done | sort -u > "$raw"
+
+while IFS= read -r candidate; do
+  [[ -n "$candidate" ]] || continue
+  if [[ "$parent_filter" != - && $(basename "$(dirname "$candidate")") != "$parent_filter" ]]; then
+    continue
+  fi
+  real=$(readlink -f -- "$candidate")
+  [[ -n "$real" && -f "$real" ]] || continue
+  device_inode=$(stat -Lc '%d:%i' -- "$real")
+  hash=$(sha256sum -- "$real" | awk '{print $1}')
+  printf '%s\t%s\t%s\t%s\n' "$hash" "$device_inode" "$real" "$candidate"
+done < "$raw" > "$canonical"
+
+# First collapse aliases of the same canonical file/inode. Then tolerate separate
+# byte-identical copies, while rejecting any genuinely different implementation.
+awk -F '\t' '!seen[$1 FS $2]++' "$canonical" | sort -t $'\t' -k1,1 -k3,3 > "$unique"
+
+count=$(wc -l < "$unique")
+if (( count == 0 )); then
+  echo "No $label found" >&2
+  exit 1
+fi
+
+hash_count=$(cut -f1 "$unique" | sort -u | wc -l)
+if (( hash_count != 1 )); then
+  echo "Conflicting $label binaries found" >&2
+  while IFS=$'\t' read -r hash device_inode real alias; do
+    printf '  sha256=%s inode=%s real=%s alias=%s\n' "$hash" "$device_inode" "$real" "$alias" >&2
+  done < "$unique"
+  exit 1
+fi
+
+# Deterministic selection among byte-identical canonical copies. Prefer /usr/lib,
+# then /usr/local/lib, then any remaining path.
+selected=$(
+  awk -F '\t' '{
+    rank=2
+    if ($3 ~ /\/usr\/lib\//) rank=0
+    else if ($3 ~ /\/usr\/local\/lib\//) rank=1
+    print rank "\t" $3
+  }' "$unique" | sort -t $'\t' -k1,1n -k2,2 | head -n1 | cut -f2-
+)
+[[ -n "$selected" && -f "$selected" ]] || { echo "Unable to select $label" >&2; exit 1; }
+printf '%s\n' "$selected"

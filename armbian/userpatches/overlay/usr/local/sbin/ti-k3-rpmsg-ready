@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+sysroot=${TI_K3_REMOTEPROC_SYSFS_ROOT:-/sys/class/remoteproc}
+virtroot=${TI_K3_VIRTIO_SYSFS_ROOT:-/sys/bus/virtio/devices}
+timeout=${TI_K3_RPMSG_READY_TIMEOUT_SECONDS:-0}
+quiet=no
+
+usage() { echo "Usage: $0 [--wait SECONDS] [--quiet]" >&2; exit 2; }
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --wait) timeout=${2:?missing seconds}; shift 2 ;;
+    --quiet) quiet=yes; shift ;;
+    *) usage ;;
+  esac
+done
+[[ "$timeout" =~ ^[0-9]+$ ]] || usage
+
+required=(j722s-main-r5f0_0-fw j722s-c71_0-fw j722s-c71_1-fw)
+required_endpoints=(13 21)
+
+find_rproc() {
+  local fw=$1 d
+  for d in "$sysroot"/remoteproc*; do
+    [[ -d "$d" ]] || continue
+    [[ "$(cat "$d/firmware" 2>/dev/null || true)" == "$fw" ]] && { printf '%s\n' "$d"; return 0; }
+  done
+  return 1
+}
+
+find_virtio() {
+  local rp=$1 v resolved marker
+  marker=${rp##*/}
+  for v in "$virtroot"/virtio*; do
+    [[ -e "$v" || -L "$v" ]] || continue
+    resolved=$(readlink -f "$v" 2>/dev/null || true)
+    if [[ "$resolved" == *"/remoteproc/${marker}/"* || "$resolved" == *"/${marker}/"* ]]; then
+      printf '%s\n' "$v"; return 0
+    fi
+    if [[ -r "$v/remoteproc" && "$(cat "$v/remoteproc")" == "$marker" ]]; then
+      printf '%s\n' "$v"; return 0
+    fi
+  done
+  return 1
+}
+
+check_all() {
+  local fw rp state v base ep
+  for fw in "${required[@]}"; do
+    rp=$(find_rproc "$fw") || return 1
+    state=$(cat "$rp/state" 2>/dev/null || true)
+    [[ "$state" == running || "$state" == attached ]] || return 1
+    v=$(find_virtio "$rp") || return 1
+    base=${v##*/}
+    for ep in "${required_endpoints[@]}"; do
+      [[ -d "$v/${base}.rpmsg_chrdev.-1.${ep}" ]] || return 1
+    done
+  done
+}
+
+inventory() {
+  local d
+  echo "TI Vision Apps RPMsg readiness failed" >&2
+  for d in "$sysroot"/remoteproc*; do
+    [[ -d "$d" ]] || continue
+    printf '%s name=%s firmware=%s state=%s\n' "${d##*/}" \
+      "$(cat "$d/name" 2>/dev/null || true)" \
+      "$(cat "$d/firmware" 2>/dev/null || true)" \
+      "$(cat "$d/state" 2>/dev/null || true)" >&2
+  done
+  find "$virtroot" -maxdepth 2 -type d -name 'virtio*.rpmsg_chrdev.-1.*' -print 2>/dev/null | sort >&2 || true
+}
+
+deadline=$((SECONDS+timeout))
+while ! check_all; do
+  (( SECONDS < deadline )) || { [[ "$quiet" == yes ]] || inventory; exit 1; }
+  sleep 1
+done
+
+if [[ "$quiet" != yes ]]; then
+  for fw in "${required[@]}"; do
+    rp=$(find_rproc "$fw")
+    v=$(find_virtio "$rp")
+    echo "TI RPMsg ready: firmware=$fw remoteproc=${rp##*/} virtio=${v##*/} endpoints=13,21"
+  done
+fi

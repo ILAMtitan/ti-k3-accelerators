@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# TIOVX is intentionally published in a private runtime. Generic tools that
+# invoke gst-inspect/gst-launch must opt into that runtime explicitly rather
+# than globally overriding the distro GStreamer environment.
+if [[ -r /etc/ti-k3/gstreamer.env ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source /etc/ti-k3/gstreamer.env
+  set +a
+fi
+source /etc/ti-k3/accelerators.env 2>/dev/null || true
+printf 'soc=%s
+' "${TI_K3_SOC:-unknown}"
+printf 'board=%s
+' "${TI_K3_BOARD:-unknown}"
+printf 'memory_profile=%s
+' "${TI_K3_MEMORY_PROFILE:-unknown}"
+printf 'runtime=%s
+' "$(readlink -f /opt/ti-k3/runtime/current 2>/dev/null || echo unavailable)"
+for e in tiovxisp tiovxmultiscaler v4l2h264enc v4l2h264dec v4l2h265enc v4l2h265dec; do
+    if gst-inspect-1.0 "$e" >/dev/null 2>&1; then printf '%s=yes
+' "$e"; else printf '%s=no
+' "$e"; fi
+done

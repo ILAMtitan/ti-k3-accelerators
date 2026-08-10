@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+verify_stream=no
+case "${1:-}" in
+  "") ;;
+  --verify-stream) verify_stream=yes ;;
+  *) echo "Usage: $0 [--verify-stream]" >&2; exit 2 ;;
+esac
+
+[[ -r /run/ti-k3/camera.env ]] && source /run/ti-k3/camera.env
+video=$(readlink -f "${TI_K3_CAMERA_VIDEO_DEVICE:-/run/ti-k3/camera-video}")
+subdev=$(readlink -f "${TI_K3_CAMERA_SUBDEV_DEVICE:-/run/ti-k3/camera-subdev}")
+[[ -e "${video}" ]] || { echo "IMX219 capture device is unavailable: ${video}" >&2; exit 1; }
+[[ -e "${subdev}" ]] || { echo "IMX219 subdevice is unavailable: ${subdev}" >&2; exit 1; }
+
+format='[fmt:SRGGB8_1X8/1920x1080 field:none]'
+media=""
+for candidate in /dev/media*; do
+  [[ -e "${candidate}" ]] || continue
+  graph=$(media-ctl -d "${candidate}" -p 2>/dev/null || true)
+  if grep -q 'imx219 ' <<<"${graph}" && grep -q 'ticsi2rx' <<<"${graph}"; then
+    media=${candidate}
+    break
+  fi
+done
+[[ -n "${media}" ]] || { echo "No media graph contains both IMX219 and TI CSI2RX" >&2; exit 1; }
+
+graph=$(media-ctl -d "${media}" -p)
+sensor=$(sed -nE 's/^[[:space:]]*- entity [0-9]+: (imx219 [^ ]+) \(.*/\1/p' <<<"${graph}" | head -n1)
+[[ -n "${sensor}" ]] || { echo "Could not identify the IMX219 media entity" >&2; exit 1; }
+
+sensor_info=$(media-ctl -d "${media}" -p -e "${sensor}")
+bridge=$(sed -nE 's/.*-> "([^"]*csi-bridge[^"]*)":[0-9]+.*/\1/p' <<<"${sensor_info}" | head -n1)
+[[ -n "${bridge}" ]] || { echo "Could not identify the Cadence CSI bridge" >&2; exit 1; }
+
+bridge_info=$(media-ctl -d "${media}" -p -e "${bridge}")
+csi2rx=$(sed -nE 's/.*-> "([^"]*ticsi2rx)":[0-9]+.*/\1/p' <<<"${bridge_info}" | head -n1)
+[[ -n "${csi2rx}" ]] || { echo "Could not identify the TI CSI2RX bridge" >&2; exit 1; }
+
+mkdir -p /run/ti-k3
+media-ctl -d "${media}" -p > /run/ti-k3/media-graph-before.txt
+media-ctl -d "${media}" --set-v4l2 "\"${sensor}\":0 ${format}"
+media-ctl -d "${media}" --set-v4l2 "\"${bridge}\":0 ${format}"
+media-ctl -d "${media}" --set-v4l2 "\"${csi2rx}\":0 ${format}"
+v4l2-ctl -d "${video}" --set-fmt-video=width=1920,height=1080,pixelformat=RGGB >/dev/null
+media-ctl -d "${media}" -p > /run/ti-k3/media-graph-after.txt
+
+capture_format=$(v4l2-ctl -d "${video}" --get-fmt-video)
+grep -q 'Width/Height.*1920/1080' <<<"${capture_format}" || {
+  echo "CSI2RX capture size did not remain 1920x1080" >&2
+  exit 1
+}
+grep -q "Pixel Format.*'RGGB'" <<<"${capture_format}" || {
+  echo "CSI2RX capture format did not remain RGGB" >&2
+  exit 1
+}
+
+if [[ "${verify_stream}" == yes ]]; then
+  timeout --foreground --kill-after=2 10 \
+    v4l2-ctl -d "${video}" \
+      --stream-mmap=4 \
+      --stream-count=4 \
+      --stream-to=/dev/null >/run/ti-k3/imx219-raw-preflight.log 2>&1 || {
+        echo "IMX219 raw capture preflight failed" >&2
+        cat /run/ti-k3/imx219-raw-preflight.log >&2
+        exit 1
+      }
+fi
+
+printf 'Configured IMX219 graph: media=%s sensor=%s bridge=%s csi2rx=%s video=%s\n' \
+  "${media}" "${sensor}" "${bridge}" "${csi2rx}" "${video}"
+[[ "${verify_stream}" == yes ]] && echo "IMX219 raw capture preflight passed"

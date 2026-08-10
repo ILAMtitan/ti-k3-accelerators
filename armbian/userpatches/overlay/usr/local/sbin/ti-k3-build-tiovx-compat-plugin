@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export LC_ALL=C
+
+EDGEAI_GST_REPO=https://github.com/TexasInstruments/edgeai-gst-plugins.git
+EDGEAI_GST_COMMIT=fea12213b449fc1ea117ad5f0016c08f417ab46d
+SOURCE_DIR=${TI_K3_TIOVX_COMPAT_SOURCE_DIR:-/opt/ti-k3-src/edgeai-gst-plugins-r12.0.16-compat}
+BUILD_DIR=${TI_K3_TIOVX_COMPAT_BUILD_DIR:-/tmp/ti-k3-edgeai-gst-plugins-r12.0.16-compat-build}
+OUTPUT_DIR=/opt/ti-k3/tiovx-compat-plugin
+EDGEAI_LINK_DIR=${BUILD_DIR}.ti-edgeai-link
+TI_2A_LINK_DIR=${BUILD_DIR}.ti-2a-link
+JOBS=${TI_K3_IMAGE_BUILD_JOBS:-$(nproc)}
+
+[[ $JOBS =~ ^[1-9][0-9]*$ ]] || { echo "Invalid build job count: $JOBS" >&2; exit 2; }
+for cmd in git meson ninja pkg-config find python3 sha256sum readelf; do
+  command -v "$cmd" >/dev/null || { echo "Missing command: $cmd" >&2; exit 1; }
+done
+for header_dir in \
+  /usr/include/processor_sdk/tiovx/include \
+  /usr/include/processor_sdk/vision_apps \
+  /usr/include/processor_sdk/imaging \
+  /usr/include/edgeai-tiovx-modules \
+  /usr/include/edgeai-tiovx-kernels \
+  /usr/include/edgeai-apps-utils; do
+  [[ -d $header_dir ]] || { echo "Missing imported TI development headers: $header_dir" >&2; exit 1; }
+done
+
+rm -rf "$SOURCE_DIR" "$BUILD_DIR" "$OUTPUT_DIR" "$EDGEAI_LINK_DIR" "$TI_2A_LINK_DIR"
+git init -q "$SOURCE_DIR"
+git -C "$SOURCE_DIR" remote add origin "$EDGEAI_GST_REPO"
+git -C "$SOURCE_DIR" fetch -q --depth 1 origin "$EDGEAI_GST_COMMIT"
+git -C "$SOURCE_DIR" checkout -q --detach FETCH_HEAD
+actual_commit=$(git -C "$SOURCE_DIR" rev-parse HEAD)
+[[ $actual_commit == "$EDGEAI_GST_COMMIT" ]] || { echo "edgeai-gst-plugins source pin mismatch: $actual_commit" >&2; exit 1; }
+
+edgeai_helper=/usr/local/sbin/ti-k3-prepare-ti-edgeai-linker-interface
+ti_2a_helper=/usr/local/sbin/ti-k3-prepare-ti-2a-linker-provider
+[[ -x $edgeai_helper && -x $ti_2a_helper ]] || { echo "Missing TI linker-interface helper" >&2; exit 1; }
+"$edgeai_helper" "$EDGEAI_LINK_DIR" /lib /usr/lib /usr/local/lib
+TI_2A_PROVIDER=$("$ti_2a_helper" "$TI_2A_LINK_DIR" /usr/lib/ti-k3-build-only/ti-2a /lib /usr/lib /usr/local/lib)
+[[ -s $TI_2A_PROVIDER ]] || { echo "TI 2A wrapper provider interface was not created" >&2; exit 1; }
+# shellcheck source=/dev/null
+source "$TI_2A_LINK_DIR/TI-2A-LINKER-PROVIDER.env"
+[[ ${selected_kind:-} == static || ${selected_kind:-} == shared ]] || { echo "Invalid TI 2A provider kind" >&2; exit 1; }
+
+# Make the provider an explicit Meson dependency. R7.20 passed the archive only
+# through ambient LDFLAGS, which did not prove ordering and failed earlier when
+# the source-built archive had never been staged. Meson now owns the link order
+# and carries a shared provider as DT_NEEDED when applicable.
+python3 - "$SOURCE_DIR/meson.build" <<'PY_MESON'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1]); s=p.read_text()
+needle="""math_dep = c.find_library('m', required : true)
+"""
+insert="""math_dep = c.find_library('m', required : true)
+ti_2a_link_dir = run_command('sh', '-c', 'printf %s "$TI_K3_TI_2A_LINK_DIR"').stdout().strip()
+if ti_2a_link_dir == ''
+  error('MESON_FAIL TI_K3_TI_2A_LINK_DIR not set.')
+endif
+ti_2a_wrapper_dep = c.find_library('ti_2a_wrapper', dirs : [ti_2a_link_dir], required : true)
+"""
+if needle not in s:
+    raise SystemExit('Could not find TI 2A Meson dependency insertion point')
+s=s.replace(needle,insert,1)
+needle=""" edgeai_apps_utils_dep,
+ math_dep
+ ]
+"""
+replace=""" edgeai_apps_utils_dep,
+ math_dep,
+ ti_2a_wrapper_dep
+ ]
+"""
+if needle not in s:
+    raise SystemExit('Could not add TI 2A dependency to plugin_deps')
+s=s.replace(needle,replace,1)
+p.write_text(s)
+PY_MESON
+
+gst_plugin_dir=$(pkg-config --variable=pluginsdir gstreamer-1.0)
+[[ $gst_plugin_dir == /usr/*/gstreamer-1.0 ]] || { echo "Unexpected GStreamer plugin directory: $gst_plugin_dir" >&2; exit 1; }
+libdir=${gst_plugin_dir#/usr/}; libdir=${libdir%/gstreamer-1.0}
+export SOC=j722s
+export PKG_CONFIG_PATH="$SOURCE_DIR/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export CFLAGS="${CFLAGS:-} -I/usr/include/processor_sdk/tiovx/include -I/usr/include/processor_sdk/vision_apps -I/usr/include/processor_sdk/imaging -I/usr/include/edgeai-tiovx-modules -I/usr/include/edgeai-tiovx-kernels -I/usr/include/edgeai-apps-utils"
+export CXXFLAGS="$CFLAGS"
+export TI_K3_TI_2A_LINK_DIR="$TI_2A_LINK_DIR"
+export LIBRARY_PATH="$EDGEAI_LINK_DIR:$TI_2A_LINK_DIR${LIBRARY_PATH:+:$LIBRARY_PATH}"
+export LDFLAGS="${LDFLAGS:-} -L$EDGEAI_LINK_DIR -L$TI_2A_LINK_DIR -Wl,-rpath-link,$EDGEAI_LINK_DIR -Wl,-rpath-link,$TI_2A_LINK_DIR"
+meson setup "$BUILD_DIR" "$SOURCE_DIR" \
+  --buildtype=debugoptimized --wrap-mode=nodownload --prefix=/usr --libdir="$libdir" \
+  -Dtests=disabled -Dexamples=disabled -Ddoc=disabled -Dprofiling=disabled \
+  -Ddl-plugins=disabled -Denable-tidl=disabled \
+  -Dpackage-name='TI K3 TIOVX compatibility plugin' \
+  -Dpackage-origin='TI K3 BeagleY-AI release-matched compatibility build'
+meson compile -C "$BUILD_DIR" -j "$JOBS" gsttiovx
+
+mapfile -t outputs < <(find "$BUILD_DIR" -type f -path '*/ext/tiovx/libgsttiovx.so' -print | sort)
+(( ${#outputs[@]} == 1 )) || { echo "Expected one compatibility libgsttiovx.so; found ${#outputs[@]}" >&2; exit 1; }
+install -d -m 0755 "$OUTPUT_DIR"
+install -m 0755 "${outputs[0]}" "$OUTPUT_DIR/libgsttiovx.so"
+if [[ $selected_kind == static ]]; then
+  for symbol in TI_2A_wrapper_create TI_2A_wrapper_process TI_2A_wrapper_delete; do
+    readelf -Ws "$OUTPUT_DIR/libgsttiovx.so" | awk -v wanted="$symbol" '$7 != "UND" && ($8 == wanted || index($8,wanted "@") == 1) {found=1} END {exit(found?0:1)}' || {
+      echo "Compatibility plugin does not contain statically linked TI 2A symbol: $symbol" >&2
+      exit 1
+    }
+  done
+else
+  readelf -dW "$OUTPUT_DIR/libgsttiovx.so" | grep -Fq "Shared library: [$selected_soname]" || {
+    echo "Compatibility plugin does not depend on shared TI 2A provider: $selected_soname" >&2
+    exit 1
+  }
+fi
+cp -a "$EDGEAI_LINK_DIR/LINKER-INTERFACE.env" "$OUTPUT_DIR/TI-EDGEAI-LINKER-INTERFACE.env"
+cp -a "$TI_2A_LINK_DIR/TI-2A-LINKER-PROVIDER.env" "$OUTPUT_DIR/TI-2A-LINKER-PROVIDER.env"
+# Preserve a shared 2A provider inside the private runtime. Static providers
+# are already incorporated into the compatibility plugin at link time.
+if [[ ${selected_kind:-} == shared ]]; then
+  [[ -s ${selected_path:-} && -n ${selected_soname:-} ]] || { echo "Invalid shared TI 2A provider provenance" >&2; exit 1; }
+  install -d -m 0755 "$OUTPUT_DIR/ti-2a-runtime"
+  install -m 0755 "$selected_path" "$OUTPUT_DIR/ti-2a-runtime/$selected_soname"
+fi
+cat > "$OUTPUT_DIR/SOURCE-BUILD.env" <<META
+format=1
+build_mode=source-built-tiovx-compatibility-plugin
+repository=$EDGEAI_GST_REPO
+commit=$EDGEAI_GST_COMMIT
+plugin_sha256=$(sha256sum "$OUTPUT_DIR/libgsttiovx.so" | awk '{print $1}')
+parallel_jobs=$JOBS
+soc=$SOC
+edgeai_linker_interface_sha256=$(sha256sum "$OUTPUT_DIR/TI-EDGEAI-LINKER-INTERFACE.env" | awk '{print $1}')
+ti_2a_linker_provider_sha256=$(sha256sum "$OUTPUT_DIR/TI-2A-LINKER-PROVIDER.env" | awk '{print $1}')
+META
+printf 'Built TI TIOVX compatibility plugin: %s\n' "$OUTPUT_DIR/libgsttiovx.so"

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+plugin=${1:-}
+feature=${2:-}
+[[ -n "$plugin" && -n "$feature" ]] || { echo "Usage: $0 PLUGIN FEATURE" >&2; exit 2; }
+[[ "$plugin" =~ ^[A-Za-z0-9_.+-]+$ && "$feature" =~ ^[A-Za-z0-9_.+-]+$ ]] || exit 2
+runtime=${TI_K3_GST_RUNTIME_CURRENT:-/opt/ti-k3/runtime/current}
+case "$plugin" in
+  tiovx) file="$runtime/ti/gstreamer-1.0/libgsttiovx.so" ;;
+  *) file="$runtime/ti/gstreamer-1.0/libgst${plugin}.so" ;;
+esac
+file=$(readlink -f "$file" 2>/dev/null || true)
+[[ -s "$file" ]] || exit 1
+private_dir=$(dirname "$(dirname "$file")")
+relocations=$(env \
+  LD_LIBRARY_PATH="$private_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  ldd -r "$file" 2>&1) || {
+  printf '%s\n' "$relocations" >&2
+  exit 1
+}
+if grep -Eqi 'not found|undefined symbol' <<<"$relocations"; then
+  printf '%s\n' "$relocations" >&2
+  exit 1
+fi
+
+# Runtime validation must load the exact private plugin. Alpha1's byte-string
+# test accepted a valid TI plugin that did not register tiovxisp.
+registry=$(mktemp /tmp/ti-k3-gst-feature-registry.XXXXXX)
+out=$(mktemp /tmp/ti-k3-gst-feature-output.XXXXXX)
+trap 'rm -f "$registry" "$out"' EXIT
+if env \
+    LD_LIBRARY_PATH="$private_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    GST_REGISTRY_1_0="$registry" \
+    GST_PLUGIN_PATH_1_0="$(dirname "$file")" \
+    timeout --signal=TERM --kill-after=5s 30s \
+      gst-inspect-1.0 "$file" >"$out" 2>&1; then
+  grep -Eq "^[[:space:]]*${feature}:" "$out"
+else
+  cat "$out" >&2
+  exit 1
+fi

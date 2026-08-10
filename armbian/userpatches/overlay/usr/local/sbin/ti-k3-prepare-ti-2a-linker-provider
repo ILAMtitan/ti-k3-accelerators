@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export LC_ALL=C
+
+OUTPUT_DIR=${1:?Usage: $0 OUTPUT_DIR SEARCH_ROOT...}
+shift
+(( $# > 0 )) || { echo "At least one TI library search root is required" >&2; exit 2; }
+for cmd in find readlink sha256sum readelf nm cmp sort awk; do
+  command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
+done
+symbols=(TI_2A_wrapper_create TI_2A_wrapper_process TI_2A_wrapper_delete)
+rm -rf "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
+
+mapfile -t files < <(
+  for root in "$@"; do
+    [[ -d $root ]] || continue
+    find -L "$root" -type f \( -name '*.so' -o -name '*.so.*' -o -name '*.a' \) \
+      ! -path '/opt/ti-k3/runtime/*' -print 2>/dev/null
+  done | sort -u
+)
+
+providers=()
+for file in "${files[@]}"; do
+  real=$(readlink -f "$file" 2>/dev/null || true)
+  [[ -n $real && -f $real ]] || continue
+  ok=yes
+  case "$real" in
+    *.a)
+      table=$(nm -g --defined-only "$real" 2>/dev/null || true)
+      [[ -n $table ]] || continue
+      for symbol in "${symbols[@]}"; do
+        grep -Eq "(^|[[:space:]])${symbol}$" <<<"$table" || { ok=no; break; }
+      done
+      ;;
+    *)
+      table=$(readelf -Ws "$real" 2>/dev/null || true)
+      [[ -n $table ]] || continue
+      for symbol in "${symbols[@]}"; do
+        awk -v wanted="$symbol" '$7 != "UND" && ($8 == wanted || index($8, wanted "@") == 1) { found=1 } END { exit(found ? 0 : 1) }' <<<"$table" || { ok=no; break; }
+      done
+      ;;
+  esac
+  [[ $ok == yes ]] && providers+=("$real")
+done
+
+mapfile -t providers < <(printf '%s\n' "${providers[@]:-}" | sed '/^$/d' | sort -u)
+(( ${#providers[@]} > 0 )) || {
+  echo "No installed TI library defines all required 2A wrapper symbols" >&2
+  printf '  required: %s\n' "${symbols[*]}" >&2
+  printf '  searched: %s\n' "$*" >&2
+  exit 1
+}
+
+selected=${providers[0]}
+selected_sha=$(sha256sum "$selected" | awk '{print $1}')
+for provider in "${providers[@]:1}"; do
+  provider_sha=$(sha256sum "$provider" | awk '{print $1}')
+  [[ $provider_sha == "$selected_sha" ]] || {
+    echo "Conflicting TI 2A wrapper providers found" >&2
+    printf '  %s  %s\n' "$selected_sha" "$selected" >&2
+    printf '  %s  %s\n' "$provider_sha" "$provider" >&2
+    exit 1
+  }
+done
+
+case "$selected" in
+  *.a)
+    linker_name=libti_2a_wrapper.a
+    selected_kind=static
+    selected_soname=
+    ;;
+  *)
+    linker_name=libti_2a_wrapper.so
+    selected_kind=shared
+    selected_soname=$(readelf -dW "$selected" 2>/dev/null | sed -n 's/.*(SONAME).*\[\([^]]*\)\].*/\1/p' | head -1)
+    [[ -n $selected_soname ]] || selected_soname=$(basename "$selected")
+    ;;
+esac
+ln -s "$selected" "$OUTPUT_DIR/$linker_name"
+cat > "$OUTPUT_DIR/TI-2A-LINKER-PROVIDER.env" <<META
+format=1
+purpose=build-only-ti-2a-wrapper-symbol-provider
+provider_count=${#providers[@]}
+selected_path=$selected
+selected_sha256=$selected_sha
+selected_kind=$selected_kind
+selected_soname=$selected_soname
+linker_name=$linker_name
+required_symbols_csv=$(IFS=,; echo "${symbols[*]}")
+META
+printf '%s\n' "$OUTPUT_DIR/$linker_name"

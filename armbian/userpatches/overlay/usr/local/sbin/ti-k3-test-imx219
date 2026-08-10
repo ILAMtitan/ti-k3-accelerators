@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# TIOVX is intentionally published in a private runtime. Generic tools that
+# invoke gst-inspect/gst-launch must opt into that runtime explicitly rather
+# than globally overriding the distro GStreamer environment.
+if [[ -r /etc/ti-k3/gstreamer.env ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source /etc/ti-k3/gstreamer.env
+  set +a
+fi
+mode="${1:-detect}"
+if command -v beagle-camera-setup >/dev/null 2>&1; then beagle-camera-setup || true; fi
+/usr/local/sbin/ti-k3-find-camera-devices --sensor imx219 --write-env >/dev/null
+source /run/ti-k3/camera.env
+video=${TI_K3_CAMERA_VIDEO_DEVICE}
+subdev=${TI_K3_CAMERA_SUBDEV_DEVICE}
+dcc_viss=${TI_K3_CAMERA_DCC_VISS:-/opt/imaging/imx219/linear/dcc_viss_1920x1080.bin}
+dcc_2a=${TI_K3_CAMERA_DCC_2A:-/opt/imaging/imx219/linear/dcc_2a_1920x1080.bin}
+io_mode=${TI_K3_CAMERA_CSI_V4L2_IO_MODE:-dmabuf-import}
+sink_pool=${TI_K3_CAMERA_TIOVX_SINK_POOL_SIZE:-8}
+src_pool=${TI_K3_CAMERA_TIOVX_SRC_POOL_SIZE:-8}
+common=(v4l2src device="$video" io-mode="$io_mode" num-buffers=300 '!' \
+  video/x-bayer,width=1920,height=1080,format=rggb,framerate=30/1 '!' \
+  tiovxisp sensor-name=SENSOR_SONY_IMX219_RPI dcc-isp-file="$dcc_viss" format-msb=7 \
+  "sink_0::dcc-2a-file=$dcc_2a" "sink_0::device=$subdev" \
+  "sink_0::pool-size=$sink_pool" "src::pool-size=$src_pool" '!' \
+  video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 '!')
+case "$mode" in
+  detect)
+    echo "video=$video"; echo "subdev=$subdev"
+    v4l2-ctl -d "$video" -D
+    v4l2-ctl -d "$subdev" -D
+    ;;
+  raw)
+    exec v4l2-ctl -d "$video" --stream-mmap=4 --stream-count=300 --stream-to=/dev/null
+    ;;
+  isp)
+    /usr/local/sbin/ti-k3-rpmsg-ready --wait "${TI_K3_RPMSG_READY_TIMEOUT_SECONDS:-10}"
+    [[ -s "$dcc_viss" && -s "$dcc_2a" ]] || { echo "IMX219 DCC assets missing" >&2; exit 1; }
+    exec gst-launch-1.0 -e -v "${common[@]}" fakesink sync=false
+    ;;
+  encode)
+    /usr/local/sbin/ti-k3-rpmsg-ready --wait "${TI_K3_RPMSG_READY_TIMEOUT_SECONDS:-10}"
+    [[ -s "$dcc_viss" && -s "$dcc_2a" ]] || { echo "IMX219 DCC assets missing" >&2; exit 1; }
+    exec gst-launch-1.0 -e -v "${common[@]}" \
+      tiovxmultiscaler target=0 '!' video/x-raw,format=NV12,width=1280,height=720 '!' \
+      queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream '!' \
+      v4l2h264enc extra-controls='controls,frame_level_rate_control_enable=1,video_bitrate=3000000,video_gop_size=15,h264_level=9,h264_profile=0,prepend_sps_and_pps_to_idr=1' '!' \
+      video/x-h264,stream-format=byte-stream,alignment=au '!' h264parse '!' fakesink sync=false
+    ;;
+  *) echo "Usage: $0 detect|raw|isp|encode" >&2; exit 2 ;;
+esac

@@ -1,0 +1,43 @@
+From 9ca7602e21fb4ccb829b48d949ac79dc18e33333 Mon Sep 17 00:00:00 2001
+From: Bart Basile <b-basile@ti.com>
+Date: Sun, 26 Jul 2026 22:00:00 -0500
+Subject: [PATCH] arm64: dts: ti: build BeagleY-AI TI K3 camera overlays
+
+Armbian now supplies the BeagleY-AI CSI0 source and an EdgeAI overlay build
+patch in the core k3-beagle-6.12 patch set.  TI K3 compiles its reviewed
+4 GiB Vision Apps memory map into the base DTB through the user override of
+k3-am67a-beagley-ai-armbian.dtsi, so do not also compose the generic EdgeAI
+overlay over that base tree.
+
+Keep the core CSI0 overlay target and add the TI K3 CSI1 overlay target.
+The corresponding CSI1 source is supplied as a bare DT file through the
+Armbian device-tree autopatcher.
+
+Signed-off-by: Bart Basile <b-basile@ti.com>
+---
+ arch/arm64/boot/dts/ti/Makefile | 10 +---------
+ 1 file changed, 1 insertion(+), 9 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/ti/Makefile b/arch/arm64/boot/dts/ti/Makefile
+--- a/arch/arm64/boot/dts/ti/Makefile
++++ b/arch/arm64/boot/dts/ti/Makefile
+@@ -212,16 +212,8 @@ dtb-$(CONFIG_ARCH_K3) += k3-j721s2-evm-ub954.dtbo
+ 
+ # Boards with J722s SoC
+ dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai.dtb
+-dtb-$(CONFIG_ARCH_K3) += k3-j722s-edgeai-apps.dtbo
+ dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai-csi0-imx219.dtbo
+-k3-am67a-beagley-ai-edgeai-dtbs := k3-am67a-beagley-ai.dtb \
+-	 k3-j722s-edgeai-apps.dtbo
+-dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai-edgeai.dtb
+-k3-am67a-beagley-ai-edgeai-csi0-imx219-dtbs := \
+-	 k3-am67a-beagley-ai.dtb \
+-	 k3-j722s-edgeai-apps.dtbo \
+-	 k3-am67a-beagley-ai-csi0-imx219.dtbo
+-dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai-edgeai-csi0-imx219.dtb
++dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai-csi1-imx219.dtbo
+ dtb-$(CONFIG_ARCH_K3) += k3-j722s-evm.dtb
+ dtb-$(CONFIG_ARCH_K3) += k3-j722s-evm-csi2-quad-rpi-cam-imx219.dtbo
+ dtb-$(CONFIG_ARCH_K3) += k3-j722s-evm-csi2-quad-tevi-ov5640.dtbo
+-- 
+2.47.3

@@ -1,0 +1,37 @@
+# Editors / OS
+*~
+*.swp
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Build output
+build/
+out/
+output/
+tmp/
+.cache/
+
+# Armbian build/work trees
+armbian-build/
+cache/
+
+# Generated images / archives
+*.img
+*.img.xz
+*.img.zst
+*.iso
+*.tar
+*.tar.gz
+
+# Logs
+*.log
+*.ans
+
+# Local qualification/build inputs
+artifacts/
+evidence/
+frozen-inputs/

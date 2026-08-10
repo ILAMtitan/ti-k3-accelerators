@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export LC_ALL=C
+
+usage() {
+  echo "Usage: $0 OUTPUT_DIR SEARCH_ROOT [SEARCH_ROOT ...]" >&2
+  exit 2
+}
+
+[[ $# -ge 2 ]] || usage
+output_dir=$1
+shift
+[[ $output_dir == /* ]] || { echo "OUTPUT_DIR must be absolute: $output_dir" >&2; exit 2; }
+
+for cmd in find readlink sha256sum sort install ln awk; do
+  command -v "$cmd" >/dev/null || { echo "Missing command: $cmd" >&2; exit 1; }
+done
+
+search_roots=()
+for root in "$@"; do
+  [[ $root == /* ]] || { echo "SEARCH_ROOT must be absolute: $root" >&2; exit 2; }
+  [[ -d $root ]] && search_roots+=("$root")
+done
+(( ${#search_roots[@]} > 0 )) || { echo "No usable TI library search roots were supplied" >&2; exit 1; }
+
+rm -rf "$output_dir"
+install -d -m 0755 "$output_dir"
+metadata="$output_dir/LINKER-INTERFACE.env"
+{
+  echo 'format=1'
+  echo 'purpose=build-only-ti-edgeai-unversioned-linker-interface'
+} > "$metadata"
+
+resolve_one() {
+  local stem=$1 path real hash selected_hash selected_real
+  local -A seen_real=()
+  local -A hash_first=()
+  local -a reals=()
+  local -a hashes=()
+
+  while IFS= read -r -d '' path; do
+    real=$(readlink -f "$path" 2>/dev/null || true)
+    [[ -n $real && -f $real && -s $real ]] || continue
+    [[ -n ${seen_real[$real]:-} ]] && continue
+    seen_real[$real]=1
+    reals+=("$real")
+  done < <(find -L "${search_roots[@]}" -type f -name "${stem}.so*" -print0 2>/dev/null)
+
+  (( ${#reals[@]} > 0 )) || {
+    echo "No installed TI library found for ${stem}.so*" >&2
+    printf '  search root: %s\n' "${search_roots[@]}" >&2
+    return 1
+  }
+
+  mapfile -t reals < <(printf '%s\n' "${reals[@]}" | sort -u)
+  for real in "${reals[@]}"; do
+    hash=$(sha256sum "$real" | awk '{print $1}')
+    if [[ -z ${hash_first[$hash]:-} ]]; then
+      hash_first[$hash]=$real
+      hashes+=("$hash")
+    fi
+  done
+
+  if (( ${#hashes[@]} != 1 )); then
+    echo "Conflicting installed TI libraries found for ${stem}.so*" >&2
+    for real in "${reals[@]}"; do
+      printf '  %s  %s\n' "$(sha256sum "$real" | awk '{print $1}')" "$real" >&2
+    done
+    return 1
+  fi
+
+  selected_hash=${hashes[0]}
+  selected_real=${hash_first[$selected_hash]}
+  ln -s "$selected_real" "$output_dir/${stem}.so"
+  [[ $(readlink -f "$output_dir/${stem}.so") == "$selected_real" ]] || {
+    echo "Failed to create linker interface for $stem" >&2
+    return 1
+  }
+
+  {
+    printf '%s_source=%s\n' "${stem//-/_}" "$selected_real"
+    printf '%s_sha256=%s\n' "${stem//-/_}" "$selected_hash"
+    printf '%s_candidate_count=%s\n' "${stem//-/_}" "${#reals[@]}"
+  } >> "$metadata"
+  printf 'Resolved %s.so -> %s\n' "$stem" "$selected_real"
+}
+
+for stem in \
+  libedgeai-tiovx-modules \
+  libedgeai-tiovx-kernels \
+  libedgeai-apps-utils; do
+  resolve_one "$stem"
+done
+
+for stem in \
+  libedgeai-tiovx-modules \
+  libedgeai-tiovx-kernels \
+  libedgeai-apps-utils; do
+  [[ -L "$output_dir/${stem}.so" && -s $(readlink -f "$output_dir/${stem}.so") ]] || {
+    echo "Incomplete TI EdgeAI linker interface: $output_dir/${stem}.so" >&2
+    exit 1
+  }
+done
+
+printf 'Prepared TI EdgeAI build linker interface in %s\n' "$output_dir"

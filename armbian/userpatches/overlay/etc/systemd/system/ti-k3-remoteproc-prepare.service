@@ -1,0 +1,14 @@
+[Unit]
+Description=Prepare TI K3 Vision Apps remote processors
+After=local-fs.target systemd-modules-load.service
+Before=ti-k3-remote-log.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/ti-k3/accelerators.env
+ExecStart=/usr/local/sbin/ti-k3-persistent-run remoteproc-prepare /usr/local/sbin/ti-k3-remoteproc-prepare
+RemainAfterExit=yes
+TimeoutStartSec=240
+
+[Install]
+WantedBy=ti-k3-accelerators.target

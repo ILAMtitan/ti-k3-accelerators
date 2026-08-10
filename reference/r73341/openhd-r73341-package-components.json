@@ -1,0 +1,92 @@
+{
+  "package": "openhd-beagley-ai-complete-bringup",
+  "version": "2026.07.31-r12.1.0-alpha4",
+  "package_revision": "2026.08.07-alpha4-cleanbuild-r7.33.4.1.1",
+  "status": "hardware-validated-july29-baseline-cleanup",
+  "targets": ["BeagleY-AI", "AM67A", "J722S", "ARM64"],
+  "build_inputs": {
+    "entry_point": "build-alpha4.sh",
+    "supported_host": "Ubuntu 22.04, 24.04, or 26.04 x86_64 with Docker",
+    "forensic_rtos_tree": {
+      "required_option": "--forensic-rtos-src DIR",
+      "mode": "read-only immutable firmware/source evidence",
+      "main_r5_sha256": "214ee24d51bd8f3166cd930b2ed01f058fe5268bc93c4fdbb43feb551f9a753c",
+      "c7x_1_sha256": "fcfd8a387e93fb23a7ddae7c8c86283ef9384dad473700012333b2715709be01",
+      "c7x_2_sha256": "23d2c02c0eba51bfa42c64d36ee6bfdeb8a79be9adc4bfb4d0e3799706bb7116",
+      "evidence": "hardware validated 2026-08-07 through RPMsg 13/21, IMX219 ISP, VPAC multiscaler, Wave5 H.264, RTP, OpenHD RF, and received 720p video"
+    },
+    "ti_2a_provider": {
+      "required_option": "--ti-2a-provider FILE",
+      "filename": "libti_2a_wrapper.a",
+      "sha256": "4f7b2acf81511fc0dabf7f61b88b7a7574d153cab435c178b238ecc689e6c567",
+      "machine": "AArch64",
+      "symbols": ["TI_2A_wrapper_create", "TI_2A_wrapper_process", "TI_2A_wrapper_delete"]
+    },
+    "ti_linux_release": {
+      "release": "11.02.01.03",
+      "machine": "j722s-evm",
+      "image_target": "tisdk-adas-image",
+      "contents_used": ["TIOVX/EdgeAI userspace", "IMX219 DCC", "TI media assets"]
+    },
+    "armbian_build": {
+      "commit": "4451999a153c8cf48ae5ff35541b1d994d5903c2",
+      "command": "./compile.sh build openhd-beagley-ai"
+    }
+  },
+  "firmware_contract": {
+    "layout": "vision_apps_evm",
+    "memory_map_id": "openhd-j722s-4gb-evm-matched-v2",
+    "main_r5_ipc_vring_base": "0xA5000000",
+    "shared_dma_base": "0xC0000000",
+    "main_r5_cpts_frequency_policy": "skip SOC_moduleSetClockFrequency in PowerClock_init",
+    "remoteproc_sequence": "load R5 -> endpoint 13 -> 10 seconds -> load both C7x -> endpoints 13,21 on all three cores",
+    "warm_remoteproc_restart_allowed": false
+  },
+  "camera_contract": {
+    "profile": "imx219-ti-isp-720p30",
+    "sensor": "IMX219 RAW8 1920x1080p30",
+    "pipeline": "v4l2src dmabuf-import -> tiovxisp -> NV12 1920x1080 -> tiovxmultiscaler -> NV12 1280x720 -> queue -> Wave5 H.264 -> RTP PT96 MTU1024 -> 127.0.0.1:5500 -> OpenHD",
+    "bitrate": 3000000,
+    "gop": 15,
+    "csi_dmabuf_import": true,
+    "wave5_dmabuf_import": false,
+    "msc_trace_preload": false,
+    "rf_720p_smoke_test": "passed 2026-08-07"
+  },
+  "source_pins": {
+    "openhd": "f07729b35e273fe3612e1aade030a7a86350d1ac",
+    "openhd_sysutils": "aaf534d6d55f187d552837e0127ffdb6ba026e5b",
+    "rtl8812au": "28dee4c7d30dc4bc713bd259cbd88d8f44de89b7",
+    "cc33xx_firmware": "0b4f850d6c0fd8e0fe0ae1d3e80ac6733aced29b",
+    "edgeai_gst_plugins": "fea12213b449fc1ea117ad5f0016c08f417ab46d",
+    "gst_plugins_good": "1.24.10",
+    "yaml_cpp": "f7320141120f720aecc4c32be25586e7da9eb978"
+  },
+  "acceptance_gates": [
+    "package integrity and focused R7.33.4.1 regression suite pass",
+    "exact hardware-validated R5/C7x and TI 2A hashes pass",
+    "A500/A700/C000 memory-map contract passes",
+    "R5 endpoint 13 precedes the 10-second C7x delay",
+    "all three cores expose RPMsg endpoints 13 and 21",
+    "camera bridge runs without an active LD_PRELOAD or MSC trace interposer",
+    "IMX219 ISP/multiscaler/Wave5 pipeline produces live 720p RTP",
+    "OpenHD RF 720p reception passes"
+  ],
+  "cleanup": {
+    "removed": [
+      "R7.31/R7.32 firmware variant and source-instrumentation machinery",
+      "remote-core source rebuild helpers and TI firmware-builder debug container",
+      "workspace resume scripts for retired failed builds",
+      "R12.0.16 multiscaler LD_PRELOAD interposer builder/source/runtime injection",
+      "standalone MSC1/MSC2 first-boot diagnostic harness",
+      "legacy version-specific regression scripts and release-note archive"
+    ],
+    "retained_validations": [
+      "immutable firmware and TI 2A identity",
+      "memory-map and remoteproc ordering",
+      "production camera/RTP live state",
+      "installer/image build boundaries",
+      "host/resource/cache/platform/radio/console invariants"
+    ]
+  }
+}

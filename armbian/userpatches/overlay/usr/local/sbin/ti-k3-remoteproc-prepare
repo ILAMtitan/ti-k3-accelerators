@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+${TI_K3_EDGEAI_MEMORY_MAP_VERIFY:-/usr/local/sbin/ti-k3-memory-map-verify}
+sysroot=${TI_K3_REMOTEPROC_SYSFS_ROOT:-/sys/class/remoteproc}
+virtroot=${TI_K3_VIRTIO_SYSFS_ROOT:-/sys/bus/virtio/devices}
+fwroot=${TI_K3_FIRMWARE_ROOT:-/lib/firmware}
+timeout=${TI_K3_REMOTEPROC_TIMEOUT_SECONDS:-120}
+settle=${TI_K3_REMOTEPROC_SETTLE_SECONDS:-2}
+c7x_load_delay=${TI_K3_C7X_LOAD_DELAY_SECONDS:-10}
+modprobe_bin=${TI_K3_MODPROBE:-/sbin/modprobe}
+state_helper=${TI_K3_REMOTEPROC_STATE_HELPER:-}
+firmware_helper=${TI_K3_REMOTEPROC_FIRMWARE_HELPER:-}
+[[ -x "$modprobe_bin" ]] || modprobe_bin=$(command -v modprobe)
+for value in timeout settle c7x_load_delay; do
+  [[ "${!value}" =~ ^[0-9]+$ ]] || { echo "Invalid numeric setting: $value=${!value}" >&2; exit 2; }
+done
+(( timeout > 0 )) || exit 2
+
+required=(j722s-main-r5f0_0-fw j722s-c71_0-fw j722s-c71_1-fw)
+for fw in "${required[@]}"; do
+  path="$fwroot/$fw"
+  [[ -e "$path" || -L "$path" ]] || { echo "Missing required TI remote-core firmware: $path" >&2; exit 1; }
+  resolved=$(readlink -f "$path" 2>/dev/null || true)
+  [[ -n "$resolved" && -s "$resolved" ]] || { echo "Invalid TI remote-core firmware alias: $path" >&2; exit 1; }
+done
+
+firmware_hash_manifest=${TI_K3_VISION_APPS_FIRMWARE_MANIFEST:-/etc/ti-k3/vision-apps-firmware.sha256}
+if [[ "$sysroot" == /sys/class/remoteproc ]]; then
+  [[ -s "$firmware_hash_manifest" ]] || { echo "Validated Vision Apps firmware manifest is missing: $firmware_hash_manifest" >&2; exit 1; }
+  sha256sum -c "$firmware_hash_manifest"
+  echo "Validated matched Vision Apps EVM firmware hash gate passed"
+fi
+
+write_state(){ local rp=$1 value=$2; if [[ -n "$state_helper" ]]; then "$state_helper" "$rp" "$value"; else printf '%s
+' "$value" >"$rp/state"; fi; }
+write_firmware(){ local rp=$1 value=$2; if [[ -n "$firmware_helper" ]]; then "$firmware_helper" "$rp" "$value"; else printf '%s
+' "$value" >"$rp/firmware"; fi; }
+find_rproc_by_firmware(){ local fw=$1 d; for d in "$sysroot"/remoteproc*; do [[ -d "$d" ]] || continue; [[ "$(cat "$d/firmware" 2>/dev/null || true)" == "$fw" ]] && { printf '%s
+' "$d"; return 0; }; done; return 1; }
+find_rproc_by_name(){ local name=$1 d; for d in "$sysroot"/remoteproc*; do [[ -d "$d" ]] || continue; [[ "$(cat "$d/name" 2>/dev/null || true)" == "$name" ]] && { printf '%s
+' "$d"; return 0; }; done; return 1; }
+wait_rproc(){ local fw=$1 name=${2:-} deadline=$((SECONDS+timeout)) rp; while :; do if rp=$(find_rproc_by_firmware "$fw"); then printf '%s
+' "$rp"; return 0; fi; if [[ -n "$name" ]] && rp=$(find_rproc_by_name "$name"); then printf '%s
+' "$rp"; return 0; fi; (( SECONDS < deadline )) || { echo "No remoteproc advertises $fw${name:+ or name $name}" >&2; return 1; }; sleep 1; done; }
+set_firmware_offline(){ local rp=$1 fw=$2 state current; state=$(cat "$rp/state" 2>/dev/null || true); current=$(cat "$rp/firmware" 2>/dev/null || true); [[ "$current" == "$fw" ]] && return 0; [[ "$state" == offline ]] || { echo "Cannot change ${rp##*/} firmware from '$current' to '$fw' while state=$state" >&2; return 1; }; write_firmware "$rp" "$fw"; [[ "$(cat "$rp/firmware" 2>/dev/null || true)" == "$fw" ]]; }
+wait_ready(){ local rp=$1 deadline=$((SECONDS+timeout)) state; while :; do state=$(cat "$rp/state" 2>/dev/null || true); case "$state" in running|attached) return 0;; esac; (( SECONDS < deadline )) || { echo "${rp##*/} did not become ready (state=$state)" >&2; return 1; }; sleep 1; done; }
+ensure_running(){ local rp=$1 fw=$2 state; set_firmware_offline "$rp" "$fw"; state=$(cat "$rp/state" 2>/dev/null || true); case "$state" in running|attached) ;; offline) write_state "$rp" start;; *) echo "Unexpected ${rp##*/} state '$state' for $fw" >&2; return 1;; esac; wait_ready "$rp"; echo "TI remoteproc running: ${rp##*/} firmware=$fw state=$(cat "$rp/state" 2>/dev/null || true)"; }
+find_virtio(){ local rp=$1 v resolved marker=${rp##*/}; for v in "$virtroot"/virtio*; do [[ -e "$v" || -L "$v" ]] || continue; resolved=$(readlink -f "$v" 2>/dev/null || true); if [[ "$resolved" == *"/remoteproc/${marker}/"* || "$resolved" == *"/${marker}/"* ]]; then printf '%s
+' "$v"; return 0; fi; if [[ -r "$v/remoteproc" && "$(cat "$v/remoteproc")" == "$marker" ]]; then printf '%s
+' "$v"; return 0; fi; done; return 1; }
+wait_endpoint(){ local rp=$1 ep=$2 deadline=$((SECONDS+timeout)) v base; while :; do if v=$(find_virtio "$rp"); then base=${v##*/}; [[ -d "$v/${base}.rpmsg_chrdev.-1.${ep}" ]] && { echo "TI endpoint ready: ${rp##*/} ${base} endpoint=$ep"; return 0; }; fi; (( SECONDS < deadline )) || { echo "Timed out waiting for ${rp##*/} endpoint $ep" >&2; return 1; }; sleep 1; done; }
+
+# C7x autoload is blacklisted. Explicitly load the main-R5 remoteproc driver,
+# qualify the matched main-R5 control service first, then start both C7x cores.
+# Do not attempt warm stop/restart recovery: the TI firmware does not reliably
+# acknowledge remoteproc shutdown after startup.
+"$modprobe_bin" ti_k3_r5_remoteproc
+main_rp=$(wait_rproc j722s-main-r5f0_0-fw 78400000.r5f)
+ensure_running "$main_rp" j722s-main-r5f0_0-fw
+wait_endpoint "$main_rp" 13
+if (( c7x_load_delay > 0 )); then
+  echo "Waiting ${c7x_load_delay}s after main-R5 endpoint 13 before starting C7x"
+  sleep "$c7x_load_delay"
+fi
+"$modprobe_bin" ti_k3_dsp_remoteproc
+c70_rp=$(wait_rproc j722s-c71_0-fw 7e000000.dsp)
+c71_rp=$(wait_rproc j722s-c71_1-fw 7e200000.dsp)
+ensure_running "$c70_rp" j722s-c71_0-fw
+ensure_running "$c71_rp" j722s-c71_1-fw
+TI_K3_REMOTEPROC_SYSFS_ROOT="$sysroot" TI_K3_VIRTIO_SYSFS_ROOT="$virtroot" /usr/local/sbin/ti-k3-rpmsg-ready --wait "$timeout"
+sleep "$settle"
+echo "TI Vision Apps remote processors and RPMsg endpoints are ready"

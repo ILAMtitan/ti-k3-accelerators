@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: ti-k3-memory-map-verify [--dtb FILE]
+
+Validate the TI K3 reference BeagleY-AI 4 GiB Vision Apps reserved-memory layout.
+The map is compiled into the base DTB; the generic k3-j722s-edgeai-apps.dtbo
+must not be layered on top of it.
+USAGE
+}
+
+dtb=""
+case "${1:-}" in
+  "") ;;
+  --dtb)
+    [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    dtb=$2
+    ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+command -v fdtget >/dev/null 2>&1 || {
+  echo "fdtget is required for Edge AI memory-map validation" >&2
+  exit 1
+}
+
+tmp=""
+cleanup() { [[ -z "$tmp" ]] || rm -f "$tmp"; }
+trap cleanup EXIT
+
+if [[ -z "$dtb" ]]; then
+  tmp=$(mktemp /tmp/ti-k3-live-fdt.XXXXXX.dtb)
+  if [[ -r /sys/firmware/fdt ]]; then
+    cat /sys/firmware/fdt >"$tmp"
+  elif [[ -d /proc/device-tree ]]; then
+    command -v dtc >/dev/null 2>&1 || {
+      echo "dtc is required when /sys/firmware/fdt is unavailable" >&2
+      exit 1
+    }
+    dtc -q -I fs -O dtb -o "$tmp" /proc/device-tree
+  else
+    echo "No live flattened device tree is available" >&2
+    exit 1
+  fi
+  dtb=$tmp
+fi
+[[ -s "$dtb" ]] || { echo "Device tree is missing or empty: $dtb" >&2; exit 1; }
+
+reserved=/reserved-memory
+children=$(fdtget -l "$dtb" "$reserved" 2>/dev/null) || {
+  echo "Effective device tree has no $reserved node" >&2
+  exit 1
+}
+
+node_compatible() {
+  local node=$1 expected=$2 value
+  value=$(fdtget -t s "$dtb" "$reserved/$node" compatible 2>/dev/null || true)
+  [[ " $value " == *" $expected "* || "$value" == "$expected" ]]
+}
+
+node_range() {
+  local node=$1 values ah al sh sl extra start size
+  values=$(fdtget -t x "$dtb" "$reserved/$node" reg 2>/dev/null) || return 1
+  read -r ah al sh sl extra <<<"$values"
+  [[ -n "${ah:-}" && -n "${al:-}" && -n "${sh:-}" && -n "${sl:-}" && -z "${extra:-}" ]] || return 1
+  start=$(( (0x${ah} << 32) | 0x${al} ))
+  size=$(( (0x${sh} << 32) | 0x${sl} ))
+  (( size > 0 )) || return 1
+  printf '%s %s %s\n' "$start" "$size" "$((start+size))"
+}
+
+require_exact() {
+  local node=$1 compatible=$2 expected_start=$(( $3 )) expected_size=$(( $4 ))
+  local range start size end
+  grep -Fxq "$node" <<<"$children" || {
+    echo "Missing TI-reference reserved-memory node: $node" >&2
+    exit 1
+  }
+  node_compatible "$node" "$compatible" || {
+    echo "Reserved-memory node $node does not use compatible=$compatible" >&2
+    exit 1
+  }
+  range=$(node_range "$node") || {
+    echo "Reserved-memory node $node has an invalid reg property" >&2
+    exit 1
+  }
+  read -r start size end <<<"$range"
+  if (( start != expected_start || size != expected_size )); then
+    printf 'Wrong range for %s: got 0x%016x size 0x%x, expected 0x%016x size 0x%x\n' \
+      "$node" "$start" "$size" "$expected_start" "$expected_size" >&2
+    exit 1
+  fi
+  printf 'TI-reference memory range: %-48s 0x%016x-0x%016x\n' \
+    "$node" "$start" "$((end-1))"
+}
+
+# Root helper needed by TI dma-buf physical-address userspace.
+root_children=$(fdtget -l "$dtb" / 2>/dev/null || true)
+grep -Fxq dma_buf_phys <<<"$root_children" || {
+  echo "Missing /dma_buf_phys node" >&2
+  exit 1
+}
+[[ $(fdtget -t s "$dtb" /dma_buf_phys compatible 2>/dev/null || true) == ti,dma-buf-phys ]] || {
+  echo "/dma_buf_phys has the wrong compatible string" >&2
+  exit 1
+}
+
+require_exact vision-apps-r5f-dma-memory@a0000000 shared-dma-pool 0xa0000000 0x00100000
+require_exact vision-apps-r5f-memory@a0100000 shared-dma-pool 0xa0100000 0x00f00000
+require_exact vision-apps-r5f-dma-memory@a1000000 shared-dma-pool 0xa1000000 0x00100000
+require_exact vision-apps-r5f-memory@a1100000 shared-dma-pool 0xa1100000 0x00f00000
+require_exact vision-apps-r5f-dma-memory@a2000000 shared-dma-pool 0xa2000000 0x00100000
+require_exact vision-apps-r5f-memory@a2100000 shared-dma-pool 0xa2100000 0x01f00000
+require_exact vision-apps-rtos-ipc-memory-region@a5000000 shared-dma-pool 0xa5000000 0x02000000
+require_exact vision-apps-dma-memory@a7000000 shared-dma-pool 0xa7000000 0x06000000
+require_exact vision-apps-c71-dma-memory@ad000000 shared-dma-pool 0xad000000 0x00100000
+require_exact vision-apps-c71_0-memory@ad100000 shared-dma-pool 0xad100000 0x03f00000
+require_exact vision-apps-c71_1-dma-memory@b1000000 shared-dma-pool 0xb1000000 0x00100000
+require_exact vision-apps-c71_1-memory@b1100000 shared-dma-pool 0xb1100000 0x03f00000
+require_exact vision-apps-core-heap-memory-lo@b5000000 shared-dma-pool 0xb5000000 0x02c00000
+require_exact c7x-ddr-heaps-hi@880000000 shared-dma-pool 0x880000000 0x20000000
+require_exact vision_apps_shared-memories dma-heap-carveout 0xc0000000 0x20000000
+
+# The failed SDK overlay created a Linux CMA region at 0x980000000, beyond the
+# BeagleY-AI's high DRAM bank. Reject any explicit CMA node at or above 0x900000000.
+while IFS= read -r node; do
+  [[ "$node" == linux-cma-buffers@* ]] || continue
+  range=$(node_range "$node" || true)
+  [[ -n "$range" ]] || continue
+  read -r start size end <<<"$range"
+  if (( start >= 0x900000000 )); then
+    printf 'Out-of-range Linux CMA node detected: %s at 0x%016x size 0x%x\n' \
+      "$node" "$start" "$size" >&2
+    exit 1
+  fi
+done <<<"$children"
+
+echo "TI K3 reference BeagleY-AI 4 GiB memory-map validation passed"

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+logger=${TI_K3_TI_REMOTE_LOGGER:-/opt/vision_apps/vx_app_arm_remote_log.out}
+[[ -x "$logger" ]] || { echo "Missing TI Vision Apps remote logger: $logger" >&2; exit 1; }
+/usr/local/sbin/ti-k3-rpmsg-ready --wait "${TI_K3_RPMSG_READY_TIMEOUT_SECONDS:-10}" --quiet
+exec stdbuf -oL -eL "$logger" "$@"

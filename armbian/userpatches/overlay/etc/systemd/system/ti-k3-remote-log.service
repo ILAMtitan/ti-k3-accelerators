@@ -1,0 +1,15 @@
+[Unit]
+Description=TI Vision Apps remote-core logger
+After=ti-k3-remoteproc-prepare.service
+Requires=ti-k3-remoteproc-prepare.service
+ConditionPathExists=/opt/vision_apps/vx_app_arm_remote_log.out
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/ti-k3/accelerators.env
+ExecStart=/usr/local/sbin/ti-k3-persistent-run remote-log /usr/local/sbin/ti-k3-remote-log
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=ti-k3-accelerators.target

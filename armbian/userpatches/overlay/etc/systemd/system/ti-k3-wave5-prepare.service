@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepare and verify TI Wave5 codec
+After=local-fs.target systemd-modules-load.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/ti-k3/accelerators.env
+ExecStart=/usr/local/sbin/ti-k3-persistent-run wave5-prepare /usr/local/sbin/ti-k3-wave5-verify --prepare
+RemainAfterExit=yes
+
+[Install]
+WantedBy=ti-k3-accelerators.target

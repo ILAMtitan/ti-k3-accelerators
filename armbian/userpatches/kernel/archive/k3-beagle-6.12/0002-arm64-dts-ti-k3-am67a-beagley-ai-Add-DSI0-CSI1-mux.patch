@@ -1,0 +1,59 @@
+From 6b0f8bf26331969e48ffb16cd466bf236d8d66a8 Mon Sep 17 00:00:00 2001
+From: Jai Luthra <jai.luthra@ideasonboard.com>
+Date: Tue, 2 Jun 2026 00:00:00 +0000
+Subject: [PATCH 2/4] arm64: dts: ti: k3-am67a-beagley-ai: Add DSI0/CSI1 mux
+
+The DSI0 connector is shared with CSI1 and selectable via the TMUX646
+switch present on the board. Model it using a gpio-mux so camera sensor
+or DSI panel overlays can override it.
+
+Backport the official BeagleY-AI camera-overlay v3 series to the
+BeagleBoard v6.12.49-ti-arm64-r56 tree used by Armbian.
+
+Reviewed-by: Rishikesh Donadkar <r-donadkar@ti.com>
+Signed-off-by: Jai Luthra <jai.luthra@ideasonboard.com>
+---
+ .../arm64/boot/dts/ti/k3-am67a-beagley-ai.dts | 20 +++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/ti/k3-am67a-beagley-ai.dts b/arch/arm64/boot/dts/ti/k3-am67a-beagley-ai.dts
+index c20037b..aef0d62 100644
+--- a/arch/arm64/boot/dts/ti/k3-am67a-beagley-ai.dts
++++ b/arch/arm64/boot/dts/ti/k3-am67a-beagley-ai.dts
+@@ -13,6 +13,19 @@
+ 		};
+ 	};
+ 
++	dsi_csi_mux: mux-controller {
++		compatible = "gpio-mux";
++		#mux-state-cells = <1>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&dsi_csi_mux_pins_default>;
++
++		mux-gpios = <&main_gpio0 2 GPIO_ACTIVE_HIGH>,
++			    <&main_gpio0 1 GPIO_ACTIVE_HIGH>;
++
++		/* state = SEL + 2*OE : 0 = DSI0, 1 = CSI1, 2,3 = off */
++		idle-state = <2>;
++	};
++
+ 	fan: cooling_fan {
+ 		compatible = "pwm-fan";
+ 	};
+@@ -49,6 +62,13 @@
+ 		>;
+ 	};
+ 
++	dsi_csi_mux_pins_default: dsi-csi-mux-default-pins {
++		pinctrl-single,pins = <
++			J722S_IOPAD(0x0004, PIN_OUTPUT, 7) /* (L23) OSPI0_LBCLKO.GPIO0_1 */
++			J722S_IOPAD(0x0008, PIN_OUTPUT, 7) /* (L22) OSPI0_DQS.GPIO0_2 */
++		>;
++	};
++
+ 	rgmii1_pins_default: rgmii1-default-pins {
+ 		pinctrl-single,pins = <
+ 			J722S_IOPAD(0x014c, PIN_INPUT, 0) /* (AC25) RGMII1_RD0 */
+-- 
+2.47.3
+

@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+exec python3 - "$@" <<'PYTHON'
+"""Allocate from the TI carveout heap and translate the DMA-BUF address."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import os
+import struct
+import sys
+
+IOC_NRBITS = 8
+IOC_TYPEBITS = 8
+IOC_SIZEBITS = 14
+IOC_NRSHIFT = 0
+IOC_TYPESHIFT = IOC_NRSHIFT + IOC_NRBITS
+IOC_SIZESHIFT = IOC_TYPESHIFT + IOC_TYPEBITS
+IOC_DIRSHIFT = IOC_SIZESHIFT + IOC_SIZEBITS
+IOC_WRITE = 1
+IOC_READ = 2
+
+
+def ioc(direction: int, type_char: str, number: int, size: int) -> int:
+    return (
+        (direction << IOC_DIRSHIFT)
+        | (ord(type_char) << IOC_TYPESHIFT)
+        | (number << IOC_NRSHIFT)
+        | (size << IOC_SIZESHIFT)
+    )
+
+
+HEAP_ALLOC = struct.Struct("=QIIQ")
+PHYS_CONVERT = struct.Struct("=I4xQ")
+DMA_HEAP_IOCTL_ALLOC = ioc(IOC_READ | IOC_WRITE, "H", 0, HEAP_ALLOC.size)
+DMA_BUF_PHYS_IOC_CONVERT = ioc(
+    IOC_READ | IOC_WRITE, "D", 0, PHYS_CONVERT.size
+)
+
+
+def parse_int(value: str) -> int:
+    return int(value, 0)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--heap",
+        default=os.environ.get(
+            "TI_K3_TIOVX_DMA_HEAP",
+            "/dev/dma_heap/carveout_vision_apps_shared-memories",
+        ),
+    )
+    parser.add_argument(
+        "--phys-device",
+        default=os.environ.get("TI_K3_DMA_BUF_PHYS_DEVICE", "/dev/dma-buf-phys"),
+    )
+    parser.add_argument(
+        "--minimum-address",
+        type=parse_int,
+        default=parse_int(os.environ.get("TI_K3_DMA_BUF_PHYS_MIN", "0xc0000000")),
+    )
+    parser.add_argument(
+        "--maximum-address",
+        type=parse_int,
+        default=parse_int(os.environ.get("TI_K3_DMA_BUF_PHYS_MAX", "0xe0000000")),
+    )
+    parser.add_argument("--layout-only", action="store_true")
+    args = parser.parse_args()
+
+    if args.layout_only:
+        print(f"DMA_HEAP_IOCTL_ALLOC=0x{DMA_HEAP_IOCTL_ALLOC:08x} size={HEAP_ALLOC.size}")
+        print(
+            f"DMA_BUF_PHYS_IOC_CONVERT=0x{DMA_BUF_PHYS_IOC_CONVERT:08x} "
+            f"size={PHYS_CONVERT.size}"
+        )
+        return 0
+
+    heap_fd = phys_fd = dma_buf_fd = -1
+    flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
+    try:
+        heap_fd = os.open(args.heap, flags)
+        request = bytearray(HEAP_ALLOC.pack(4096, 0, flags, 0))
+        fcntl.ioctl(heap_fd, DMA_HEAP_IOCTL_ALLOC, request, True)
+        _length, dma_buf_fd, _fd_flags, _heap_flags = HEAP_ALLOC.unpack(request)
+        if dma_buf_fd < 0:
+            raise RuntimeError("DMA heap allocation returned an invalid file descriptor")
+
+        phys_fd = os.open(args.phys_device, flags)
+        conversion = bytearray(PHYS_CONVERT.pack(dma_buf_fd, 0))
+        fcntl.ioctl(phys_fd, DMA_BUF_PHYS_IOC_CONVERT, conversion, True)
+        _fd, physical_address = PHYS_CONVERT.unpack(conversion)
+
+        if not args.minimum_address <= physical_address < args.maximum_address:
+            raise RuntimeError(
+                f"translated address 0x{physical_address:016x} is outside "
+                f"0x{args.minimum_address:016x}-0x{args.maximum_address:016x}"
+            )
+
+        print(
+            "TI DMA-BUF physical exporter ready: "
+            f"heap={args.heap} address=0x{physical_address:016x}"
+        )
+        return 0
+    except (OSError, RuntimeError) as exc:
+        print(f"TI DMA-BUF physical exporter smoke test failed: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        for descriptor in (phys_fd, dma_buf_fd, heap_fd):
+            if descriptor >= 0:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+PYTHON

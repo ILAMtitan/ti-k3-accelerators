@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+kernel_config="${TI_K3_KERNEL_CONFIG_FILE:-/boot/config-$(uname -r)}"
+heap="${TI_K3_TIOVX_DMA_HEAP:-/dev/dma_heap/carveout_vision_apps_shared-memories}"
+phys_device="${TI_K3_DMA_BUF_PHYS_DEVICE:-/dev/dma-buf-phys}"
+timeout="${TI_K3_DMA_HEAP_TIMEOUT_SECONDS:-15}"
+[[ "${timeout}" =~ ^[0-9]+$ ]] || timeout=15
+
+[[ -r "${kernel_config}" ]] || {
+  echo "Kernel configuration is unavailable: ${kernel_config}" >&2
+  exit 1
+}
+for option in CONFIG_DMABUF_HEAPS=y CONFIG_DMABUF_HEAPS_CARVEOUT=y CONFIG_DMA_BUF_PHYS=y; do
+  grep -Fxq "${option}" "${kernel_config}" || {
+    echo "Kernel lacks ${option}" >&2
+    exit 1
+  }
+done
+
+for ((elapsed=0; elapsed<=timeout; elapsed++)); do
+  if [[ -e "${heap}" && -e "${phys_device}" ]]; then
+    echo "TI carveout DMA heap ready: ${heap}"
+    echo "TI DMA-BUF physical exporter ready: ${phys_device}"
+    if [[ "${TI_K3_DMA_BUF_PHYS_SMOKE:-yes}" == yes ]]; then
+      /usr/local/sbin/ti-k3-dma-buf-phys-smoke \
+        --heap "${heap}" \
+        --phys-device "${phys_device}"
+    fi
+    exit 0
+  fi
+  command -v udevadm >/dev/null 2>&1 && udevadm settle --timeout=1 2>/dev/null || true
+  (( elapsed == timeout )) || sleep 1
+done
+
+[[ -e "${heap}" ]] || echo "Required TI carveout DMA heap was not created: ${heap}" >&2
+[[ -e "${phys_device}" ]] || echo "Required TI DMA-BUF physical exporter was not created: ${phys_device}" >&2
+if [[ -d /dev/dma_heap ]]; then
+  echo "Available DMA heaps:" >&2
+  find /dev/dma_heap -maxdepth 1 -mindepth 1 -printf '  %f\n' >&2 || true
+else
+  echo "/dev/dma_heap does not exist" >&2
+fi
+ls -la /dev/dma-buf-phys /dev/dma_heap 2>&1 >&2 || true
+journalctl -k -b --no-pager 2>/dev/null | \
+  grep -Ei 'dma-buf-phys|Carveout Heap|dma[_-]heap|vision_apps_shared' | \
+  tail -n 60 >&2 || true
+exit 1

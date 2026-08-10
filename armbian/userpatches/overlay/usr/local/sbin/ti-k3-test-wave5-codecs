@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+codec=${1:-h264}
+/usr/local/sbin/ti-k3-wave5-verify --prepare
+case "$codec" in
+  h264)
+    enc=v4l2h264enc; dec=v4l2h264dec
+    caps='video/x-h264,stream-format=byte-stream,alignment=au'
+    parse=h264parse
+    controls='controls,frame_level_rate_control_enable=1,video_bitrate=3000000,video_gop_size=15'
+    ;;
+  h265)
+    enc=v4l2h265enc; dec=v4l2h265dec
+    caps='video/x-h265,stream-format=byte-stream,alignment=au'
+    parse=h265parse
+    controls='controls,frame_level_rate_control_enable=1,video_bitrate=3000000,video_gop_size=15'
+    ;;
+  *) echo "Usage: $0 h264|h265" >&2; exit 2;;
+esac
+gst-inspect-1.0 "$enc" >/dev/null
+gst-inspect-1.0 "$dec" >/dev/null
+exec gst-launch-1.0 -e -v \
+  videotestsrc num-buffers=120 '!' \
+  video/x-raw,format=NV12,width=1280,height=720,framerate=30/1 '!' \
+  "$enc" extra-controls="$controls" '!' "$caps" '!' "$parse" '!' "$dec" '!' fakesink sync=false

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p /run/ti-k3
+{
+  echo "# Generated $(date -Is)"
+  for node in /sys/class/video4linux/*; do
+    [[ -e "${node}/name" ]] || continue
+    dev=/dev/$(basename "${node}")
+    printf '%s\t%s\n' "${dev}" "$(cat "${node}/name")"
+  done
+} > /run/ti-k3/video-nodes.txt
+media-ctl -p > /run/ti-k3/media-topology.txt 2>&1 || true
+v4l2-ctl --list-devices > /run/ti-k3/v4l2-devices.txt 2>&1 || true
+if /usr/local/sbin/ti-k3-find-camera-devices --sensor imx219 --write-env >/run/ti-k3/camera-detection.txt 2>&1; then
+  cat /run/ti-k3/camera-detection.txt
+else
+  rm -f /run/ti-k3/camera.env /run/ti-k3/camera-video /run/ti-k3/camera-subdev
+  echo "No supported CSI camera detected; topology written under /run/ti-k3"
+fi

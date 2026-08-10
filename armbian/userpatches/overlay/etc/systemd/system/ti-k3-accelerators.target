@@ -1,0 +1,7 @@
+[Unit]
+Description=TI K3 accelerator platform
+Wants=ti-k3-wave5-prepare.service ti-k3-remoteproc-prepare.service ti-k3-remote-log.service
+After=ti-k3-wave5-prepare.service ti-k3-remoteproc-prepare.service
+
+[Install]
+WantedBy=multi-user.target

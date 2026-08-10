@@ -1,0 +1,65 @@
+From 13d038709a9e0890976e0ab73d281da37cf2d304 Mon Sep 17 00:00:00 2001
+From: Jai Luthra <jai.luthra@ideasonboard.com>
+Date: Tue, 2 Jun 2026 00:00:00 +0000
+Subject: [PATCH 1/4] arm64: dts: ti: k3-am67a-beagley-ai: Setup I2C for
+ CSI/DSI connectors
+
+I2C0 is used by the 22-pin CSI1/DSI0 connector and I2C2 is used by the
+22-pin CSI0 connector. Add the missing pinmux definition for I2C2, and
+setup both nodes but keep them disabled. They will be enabled by camera
+and display overlays.
+
+Backport the official BeagleY-AI camera-overlay v3 series to the
+BeagleBoard v6.12.49-ti-arm64-r56 tree used by Armbian.
+
+Signed-off-by: Jai Luthra <jai.luthra@ideasonboard.com>
+---
+ .../arm64/boot/dts/ti/k3-am67a-beagley-ai.dts | 25 +++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/ti/k3-am67a-beagley-ai.dts b/arch/arm64/boot/dts/ti/k3-am67a-beagley-ai.dts
+index 2eba614..c20037b 100644
+--- a/arch/arm64/boot/dts/ti/k3-am67a-beagley-ai.dts
++++ b/arch/arm64/boot/dts/ti/k3-am67a-beagley-ai.dts
+@@ -27,6 +27,13 @@
+ 		bootph-all;
+ 	};
+ 
++	main_i2c2_pins_default: main-i2c2-default-pins {
++		pinctrl-single,pins = <
++			J722S_IOPAD(0x00b0, PIN_INPUT_PULLUP, 1) /* (P22) GPMC0_CSn2.I2C2_SCL */
++			J722S_IOPAD(0x00b4, PIN_INPUT_PULLUP, 1) /* (P23) GPMC0_CSn3.I2C2_SDA */
++		>;
++	};
++
+ 	main_uart0_pins_default: main-uart0-default-pins {
+ 		pinctrl-single,pins = <
+ 			J722S_IOPAD(0x01c8, PIN_INPUT, 0)	/* (A22) UART0_RXD */
+@@ -49,6 +56,24 @@
+ 	};
+ };
+ 
++&main_i2c0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&main_i2c0_pins_default>;
++	clock-frequency = <400000>;
++
++	/* Only used by the CSI1/DSI0 connector; enable it in the overlay */
++	status = "disabled";
++};
++
++&main_i2c2 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&main_i2c2_pins_default>;
++	clock-frequency = <400000>;
++
++	/* Only used by the CSI0 connector; enable it in the overlay */
++	status = "disabled";
++};
++
+ &main_i2c1 {
+ 	status = "okay";
+ 	pinctrl-names = "default";
+-- 
+2.47.3
+
