@@ -23,12 +23,16 @@ function user_config__ti_k3_accelerators() {
 function custom_kernel_config__ti_k3_accelerators() {
     [[ "${BOARD:-}" == "beagley-ai" ]] || return 0
     local cma_mb="${TI_K3_CMA_MBYTES:-256}"
-    kernel_config_modifying_hashes+=("ti-k3-accelerators-v1-cma-${cma_mb}")
+    kernel_config_modifying_hashes+=("ti-k3-accelerators-v2-cma-${cma_mb}-cc33xx")
     opts_y+=(
         MEDIA_SUPPORT MEDIA_CONTROLLER VIDEO_DEV V4L2_FWNODE V4L2_ASYNC
         V4L_MEM2MEM_DRIVERS DMA_CMA DMABUF_HEAPS DMABUF_HEAPS_CARVEOUT
         DMA_BUF_PHYS MULTIPLEXER MUX_GPIO FW_LOADER
+        WLAN WLAN_VENDOR_TI MMC
     )
-    opts_m+=(VIDEO_WAVE_VPU VIDEO_IMX219 VIDEO_CADENCE_CSI2RX VIDEO_TI_J721E_CSI2RX)
+    opts_m+=(
+        CFG80211 MAC80211 CC33XX CC33XX_SDIO
+        VIDEO_WAVE_VPU VIDEO_IMX219 VIDEO_CADENCE_CSI2RX VIDEO_TI_J721E_CSI2RX
+    )
     opts_val["CMA_SIZE_MBYTES"]="${cma_mb}"
 }
