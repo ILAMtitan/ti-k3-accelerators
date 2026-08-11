@@ -45,6 +45,10 @@ done
 target="$overlay/etc/systemd/system/ti-k3-accelerators.target"
 ! grep -Fq 'imx219' "$target"
 
+# The BeagleY-AI image bake must select the hardware-qualified CSI0 IMX219 overlay.
+customizer="$root/armbian/userpatches/customize-image.sh"
+grep -Fq '/usr/local/sbin/ti-k3-select-camera-overlay imx219 0' "$customizer"
+
 # prepare-armbian must never delete an existing userpatches tree.
 prepare="$root/prepare-armbian.sh"
 ! grep -Fq 'rm -rf "$build/userpatches"' "$prepare"
