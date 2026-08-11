@@ -1,5 +1,5 @@
 ad870470d0289fb3e9c8500c9795f886e8fc4e916c62aa94b304ed7f84c62d10  ./armbian/userpatches/config-ti-k3-beagley-ai.conf
-ce628a7bd64e90ddca9973acf49c6c54a899fafd2f465b8466a253a9c8774b36  ./armbian/userpatches/customize-image.sh
+b9031f1961c396a23d6340ad01cd126d018e6f5762ceddce8fcb0bcdee07a0f7  ./armbian/userpatches/customize-image.sh
 658d67086b664732f66adf4cee13a99a9458425b9323e256e9895bc1f70bcace  ./armbian/userpatches/extensions/ti-k3-accelerators.sh
 3869431d16c5f025d63ef9947871641bba43905301c0459b19a1d7efa7587cb7  ./armbian/userpatches/kernel/archive/k3-beagle-6.12/0001-arm64-dts-ti-k3-am67a-beagley-ai-Setup-I2C-for-CSI-D.patch
 59d9053de4e6bc8d0a92a57fb2593bcac6f89942847d7bea2fbf6bf84a7e5b68  ./armbian/userpatches/kernel/archive/k3-beagle-6.12/0002-arm64-dts-ti-k3-am67a-beagley-ai-Add-DSI0-CSI1-mux.patch
@@ -47,7 +47,7 @@ a8a8ca059ad33513d508da2ad497d20c897e3c349ca54fe666715342a774659f  ./armbian/user
 48e42bd8b40118bae8ad429d262e0047615267cb5c6c432b57f2185e100155f8  ./docs/PASS1-TEST-PLAN.md
 fc43e700e27790a8609235b3fbddddf6d86f2ea116a5bc9370711b6f76f5e931  ./docs/PORTING-MODEL.md
 7ad8b5079a30cb1769a6f5cac6aafef308020bb5f82ae20e5da9dd581b88a1c5  ./.gitignore
-888a76c93eac868313ed25b015373f55543d778731fe8b1a931c7748f1b044e0  ./prepare-armbian.sh
+888a76c93e23261f5148665fe0bb56d76643f8d0ccf29c46825ab6ef1b380fc0  ./prepare-armbian.sh
 431edad990e1c727215c2469143c2155f4c73b60267ac99df6e310ea595b539f  ./profiles/board/beagley-ai.env
 fd8b500053a0b43f9f0f966c1971907da154655194213632cfd1f5b48fddf076  ./profiles/memory/j722s-beagley-ai-4gb.json
 6af00227e45ea31b0edddf21b85ebe9cf589f26ea42ed9b437a7d4a3c39eb1a7  ./profiles/soc/j722s.env
