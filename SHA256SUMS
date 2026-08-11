@@ -1,5 +1,5 @@
 ad870470d0289fb3e9c8500c9795f886e8fc4e916c62aa94b304ed7f84c62d10  ./armbian/userpatches/config-ti-k3-beagley-ai.conf
-d6a8464c447540240765739c0a7fdb66e6438f6f6e970bd6f08ce6e5ffddc58d  ./armbian/userpatches/customize-image.sh
+ce628a7bd64e90ddca9973acf49c6c54a899fafd2f465b8466a253a9c8774b36  ./armbian/userpatches/customize-image.sh
 658d67086b664732f66adf4cee13a99a9458425b9323e256e9895bc1f70bcace  ./armbian/userpatches/extensions/ti-k3-accelerators.sh
 3869431d16c5f025d63ef9947871641bba43905301c0459b19a1d7efa7587cb7  ./armbian/userpatches/kernel/archive/k3-beagle-6.12/0001-arm64-dts-ti-k3-am67a-beagley-ai-Setup-I2C-for-CSI-D.patch
 59d9053de4e6bc8d0a92a57fb2593bcac6f89942847d7bea2fbf6bf84a7e5b68  ./armbian/userpatches/kernel/archive/k3-beagle-6.12/0002-arm64-dts-ti-k3-am67a-beagley-ai-Add-DSI0-CSI1-mux.patch
@@ -57,5 +57,5 @@ a1700663a12f1e0ae770c128f4257bd91c440af9c671944aaa18a0524e3ff986  ./README.md
 35ac82b104ef0d8adbf23007daefae7accf8a793d9d03ee75fc534c5f6c5221b  ./reference/r73341/openhd-r73341-package-components.json
 1ebd841fa101e2ca28d707b3482113063996d6c4c9387696061d90e0d54b98d1  ./scripts/import-ti-userspace.sh
 0dd3371834df5f758f570a53e62251bd6b9c32cdf46cc8636b1ef9b4a7efd71d  ./tests/test-boundary.sh
-5b6b4ea906c19db5c6c790ffa4992a32e87c0b2080c913dabdf4332c419b6650  ./tests/test-contract.sh
+94705b5a81f3d56ac151a60980c0479522c9e71437b9aec9243631c6ab13746e  ./tests/test-contract.sh
 45a2d093587cfb613ff7198db993631d1321c630b5bca05f4eddcd46dd7d7922  ./VERSION
