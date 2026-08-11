@@ -107,4 +107,5 @@ EOF
 systemctl enable ti-k3-accelerators.target
 apt-get clean
 rm -rf /var/lib/apt/lists/* /opt/ti-k3-port/ti-assets-rootfs /opt/ti-k3-port/forensic-firmware
-printf 'TI K3 accelerator image customization complete\n'
+printf 'TI K3 accelerator image customization complete
+'
