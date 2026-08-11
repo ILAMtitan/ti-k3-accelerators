@@ -83,6 +83,9 @@ fdtoverlay -i "$base_dtb" -o /tmp/ti-k3-camera-combined.dtb "$camera_dtbo"
 /usr/local/sbin/ti-k3-memory-map-verify --dtb /tmp/ti-k3-camera-combined.dtb
 for dcc in /opt/imaging/imx219/linear/dcc_viss_1920x1080.bin /opt/imaging/imx219/linear/dcc_2a_1920x1080.bin; do [[ -s $dcc ]] || { echo "Missing DCC: $dcc" >&2; exit 1; }; done
 
+# Select the hardware-qualified default camera profile in the bootloader config.
+/usr/local/sbin/ti-k3-select-camera-overlay imx219 0
+
 # Build/publish the same private TI/GStreamer runtime proven by R7.33.4.1 under a generic namespace.
 /usr/local/sbin/ti-k3-build-gstreamer-runtime
 rm -rf /usr/lib/ti-k3-build-only /usr/lib/openhd-build-only
