@@ -1,0 +1,1638 @@
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/concerto_mcu2_0_inc.mak b/vision_apps/platform/j722s/rtos/mcu2_0/concerto_mcu2_0_inc.mak
+index eb48084..2d5543a 100755
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/concerto_mcu2_0_inc.mak
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/concerto_mcu2_0_inc.mak
+@@ -10,10 +10,10 @@ DEFS+=SOC_J722S
+ CSOURCES += generated/ti_board_config.c
+ CSOURCES += generated/ti_board_open_close.c
+ CSOURCES += generated/ti_dpl_config.c
+-CSOURCES += generated/ti_drivers_config.c
++CSOURCES += generated/ti_drivers_config_openhd.c
+ CSOURCES += generated/ti_drivers_open_close.c
+ CSOURCES += generated/ti_pinmux_config.c
+-CSOURCES += generated/ti_power_clock_config.c
++CSOURCES += generated/ti_power_clock_config_openhd.c
+ ifeq ($(BUILD_ENABLE_ETHFW),yes)
+ 	CSOURCES += generated/ti_enet_config.c
+ 	CSOURCES += generated/ti_enet_open_close.c
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/freertos_no_board_deps.syscfg b/vision_apps/platform/j722s/rtos/mcu2_0/freertos_no_board_deps.syscfg
+index 90502bf..a41482b 100644
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/freertos_no_board_deps.syscfg
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/freertos_no_board_deps.syscfg
+@@ -131,7 +131,7 @@ mpu_armv715.attributes = "NonCached";
+ 
+ addr_translate1.$name      = "CONFIG_ADDR_TRANSLATE_REGION0";
+ addr_translate1.localAddr  = 0xC0000000;
+-addr_translate1.systemAddr = 0x900000000;
++addr_translate1.systemAddr = 0xC0000000;
+ 
+ enet_cpsw1.$name                               = "CONFIG_ENET_CPSW0";
+ enet_cpsw1.IsEthFw                             = true;
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_dpl_config.c b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_dpl_config.c
+index 14eba82..2504b8c 100644
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_dpl_config.c
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_dpl_config.c
+@@ -68,19 +68,6 @@ HwiP_Config gHwiConfig = {
+     .intcBaseAddr = 0x2FFF0000u,
+ };
+ 
+-/* ----------- ClockP ----------- */
+-#define TIMER0_CLOCK_SRC_MUX_ADDR (0x1081B0u)
+-#define TIMER0_CLOCK_SRC_HFOSC0_CLKOUT (0x0u)
+-#define TIMER0_BASE_ADDR     (0x2400000u)
+-
+-ClockP_Config gClockConfig = {
+-    .timerBaseAddr = TIMER0_BASE_ADDR,
+-    .timerHwiIntNum = 24,
+-    .timerInputClkHz = 25000000,
+-    .timerInputPreScaler = 1,
+-    .usecPerTick = 1000,
+-};
+-
+ /* ----------- DebugP ----------- */
+ void putchar_(char character)
+ {
+@@ -89,19 +76,6 @@ void putchar_(char character)
+ }
+ 
+ 
+-/* ----------- AddrTranslateP ----------- */
+-#define CONFIG_ADDR_TRANSLATE_RAT_BASE_ADDR  (0x02FFE0000u)
+-#define CONFIG_ADDR_TRANSLATE_REGIONS  (1u)
+-
+-AddrTranslateP_RegionConfig gAddrTranslateRegionConfig[CONFIG_ADDR_TRANSLATE_REGIONS] = 
+-{
+-    {
+-        .localAddr = 0xC0000000u,
+-        .systemAddr = 0x900000000u,
+-        .size = AddrTranslateP_RegionSize_512M,
+-    },
+-};
+-
+ /* ----------- CacheP ----------- */
+ CacheP_Config gCacheConfig = {
+     .enable = 1,
+@@ -331,6 +305,32 @@ MpuP_RegionConfig gMpuRegionConfig[CONFIG_MPU_NUM_REGIONS] =
+     },
+ };
+ 
++/* ----------- ClockP ----------- */
++#define TIMER0_CLOCK_SRC_MUX_ADDR (0x1081B0u)
++#define TIMER0_CLOCK_SRC_HFOSC0_CLKOUT (0x0u)
++#define TIMER0_BASE_ADDR     (0x2400000u)
++
++ClockP_Config gClockConfig = {
++    .timerBaseAddr = TIMER0_BASE_ADDR,
++    .timerHwiIntNum = 24,
++    .timerInputClkHz = 25000000,
++    .timerInputPreScaler = 1,
++    .usecPerTick = 1000,
++};
++
++/* ----------- AddrTranslateP ----------- */
++#define CONFIG_ADDR_TRANSLATE_RAT_BASE_ADDR  (0x02FFE0000u)
++#define CONFIG_ADDR_TRANSLATE_REGIONS  (1u)
++
++AddrTranslateP_RegionConfig gAddrTranslateRegionConfig[CONFIG_ADDR_TRANSLATE_REGIONS] = 
++{
++    {
++        .localAddr = 0xC0000000u,
++        .systemAddr = 0xC0000000u,
++        .size = AddrTranslateP_RegionSize_512M,
++    },
++};
++
+ 
+ #define BOOT_SECTION __attribute__((section(".text.boot")))
+ 
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_dpl_config.h b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_dpl_config.h
+index aa54653..da4c13b 100644
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_dpl_config.h
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_dpl_config.h
+@@ -44,13 +44,13 @@ extern "C" {
+ #endif
+ 
+ #include <kernel/dpl/HwiP.h>
+-#include <kernel/dpl/ClockP.h>
+ 
+ #include <kernel/dpl/DebugP.h>
+ 
+-#include <kernel/dpl/AddrTranslateP.h>
+ #include <kernel/dpl/CacheP.h>
+ #include <kernel/dpl/MpuP_armv7.h>
++#include <kernel/dpl/ClockP.h>
++#include <kernel/dpl/AddrTranslateP.h>
+ 
+ void Dpl_init(void);
+ void Dpl_deinit(void);
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config.c b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config.c
+index cae018f..7974499 100644
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config.c
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config.c
+@@ -38,492 +38,6 @@
+ 
+ 
+ 
+-/* DSS attributes */
+-
+-/* DSS VP Params */
+-Dss_DctrlVpParams gDssVpParams[CONFIG_DSS_NUM_INSTANCES] =
+-{
+-    {
+-        .vpId = CSL_DSS_VP_ID_2,
+-        .lcdOpTimingCfg = {
+-            .mInfo.standard = FVID2_STD_CUSTOM,
+-            .mInfo.width = 1920U,
+-            .mInfo.height = 1080U,
+-            .mInfo.hFrontPorch = 88U,
+-            .mInfo.hBackPorch = 148U,
+-            .mInfo.hSyncLen = 44U,
+-            .mInfo.vFrontPorch = 4U,
+-            .mInfo.vBackPorch = 36U,
+-            .mInfo.vSyncLen = 5U,
+-            .dvoFormat = FVID2_DV_GENERIC_DISCSYNC,
+-            .videoIfWidth = FVID2_VIFW_24BIT,
+-        },
+-        .lcdPolarityCfg = {
+-            .actVidPolarity = FVID2_POL_HIGH,
+-            .hsPolarity = FVID2_POL_HIGH,
+-            .vsPolarity = FVID2_POL_HIGH,
+-            .pixelClkPolarity = FVID2_EDGE_POL_RISING,
+-        },
+-        .gammaCfg = {
+-            .gammaEnable = FALSE,
+-        }
+-    },
+-    {
+-        .vpId = CSL_DSS_VP_ID_4,
+-        .lcdOpTimingCfg = {
+-            .mInfo.standard = FVID2_STD_CUSTOM,
+-            .mInfo.width = 1920U,
+-            .mInfo.height = 1080U,
+-            .mInfo.hFrontPorch = 8U,
+-            .mInfo.hBackPorch = 40U,
+-            .mInfo.hSyncLen = 32U,
+-            .mInfo.vFrontPorch = 60U,
+-            .mInfo.vBackPorch = 55U,
+-            .mInfo.vSyncLen = 55U,
+-            .mInfo.pixelClock = 150000000ULL,
+-            .dvoFormat = FVID2_DV_GENERIC_DISCSYNC,
+-            .videoIfWidth = FVID2_VIFW_24BIT,
+-        },
+-        .lcdPolarityCfg = {
+-            .actVidPolarity = FVID2_POL_HIGH,
+-            .hsPolarity = FVID2_POL_LOW,
+-            .vsPolarity = FVID2_POL_LOW,
+-            .pixelClkPolarity = FVID2_EDGE_POL_RISING,
+-        },
+-        .gammaCfg = {
+-            .gammaEnable = FALSE,
+-        }
+-    },
+-};
+-
+-/* DSS VP Advance Params */
+-Dss_DctrlAdvVpParams gDssAdvVpParams[CONFIG_DSS_NUM_INSTANCES] =
+-{
+-    {
+-        .vpId = CSL_DSS_VP_ID_2,
+-        .lcdAdvSignalCfg = {
+-            .hVAlign = CSL_DSS_VP_HVSYNC_ALIGNED,
+-            .hVClkControl = CSL_DSS_VP_HVCLK_CONTROL_ON,
+-        },
+-    },
+-    {
+-        .vpId = CSL_DSS_VP_ID_4,
+-        .lcdAdvSignalCfg = {
+-            .hVAlign = CSL_DSS_VP_HVSYNC_ALIGNED,
+-            .hVClkControl = CSL_DSS_VP_HVCLK_CONTROL_ON,
+-        },
+-    },
+-};
+-
+-
+-/* DSS Overlay Params */
+-Dss_DctrlOverlayParams gDssOverlayParams[CONFIG_DSS_NUM_INSTANCES] =
+-{
+-    {
+-        .overlayId = CSL_DSS_OVERLAY_ID_2,
+-        .colorbarEnable = FALSE,
+-        .overlayCfg = {
+-            .colorKeyEnable = FALSE,
+-            .colorKeySel = CSL_DSS_OVERLAY_TRANS_COLOR_DEST,
+-            .backGroundColor = 0xC8C800U,
+-        }
+-    },
+-    {
+-        .overlayId = CSL_DSS_OVERLAY_ID_4,
+-        .colorbarEnable = FALSE,
+-        .overlayCfg = {
+-            .colorKeyEnable = FALSE,
+-            .colorKeySel = CSL_DSS_OVERLAY_TRANS_COLOR_DEST,
+-            .backGroundColor = 0xC8C800U,
+-        }
+-    },
+-};
+-
+-/* DSS Overlay Layer Params */
+-Dss_DctrlOverlayLayerParams gDssOverlayLayerParams[CONFIG_DSS_NUM_INSTANCES] =
+-{
+-    {
+-        .overlayId = CSL_DSS_OVERLAY_ID_2,
+-        .pipeLayerNum = {
+-            CSL_DSS_VID_PIPE_ID_VID1,
+-            CSL_DSS_VID_PIPE_ID_VIDL1,
+-        }
+-    },
+-    {
+-        .overlayId = CSL_DSS_OVERLAY_ID_4,
+-        .pipeLayerNum = {
+-            CSL_DSS_VID_PIPE_ID_VID2,
+-            CSL_DSS_VID_PIPE_ID_VIDL2,
+-        }
+-    },
+-};
+-
+-uint32_t gDssDisplayInterface[CONFIG_DSS_NUM_INSTANCES] = {
+-    DSS_HDMI_INTERFACE,
+-    DSS_DSI_INTERFACE,
+-};
+-
+-Dss_DctrlDsiParams gDsiParams =
+-{
+-    .numOfLanes = 4,
+-    .laneSpeedInKbps = 900000
+-};
+-
+-
+-
+-
+-
+-static Dss_DctrlPathInfo gDssPathInfo =
+-{
+-    .numEdges = 7,
+-    .edgeInfo = {
+-
+-        {
+-            .startNode = DSS_DCTRL_NODE_VID1,
+-            .endNode = DSS_DCTRL_NODE_OVR2,
+-        },
+-
+-        {
+-            .startNode = DSS_DCTRL_NODE_OVR2,
+-            .endNode = DSS_DCTRL_NODE_VP2,
+-        },
+-
+-        {
+-            .startNode = DSS_DCTRL_NODE_VIDL1,
+-            .endNode = DSS_DCTRL_NODE_OVR2,
+-        },
+-
+-        {
+-            .startNode = DSS_DCTRL_NODE_VID2,
+-            .endNode = DSS_DCTRL_NODE_OVR4,
+-        },
+-
+-        {
+-            .startNode = DSS_DCTRL_NODE_OVR4,
+-            .endNode = DSS_DCTRL_NODE_VP4,
+-        },
+-
+-        {
+-            .startNode = DSS_DCTRL_NODE_VP4,
+-            .endNode = DSS_DCTRL_NODE_DSI,
+-        },
+-
+-        {
+-            .startNode = DSS_DCTRL_NODE_VIDL2,
+-            .endNode = DSS_DCTRL_NODE_OVR4,
+-        },
+-    }
+-};
+-
+-
+-/* DSS Pipeline Safety Params */
+-Dss_DispPipeSafetyChkParams gDssPipelineSafetyParams[CSL_DSS_VID_PIPE_ID_MAX] =
+-{
+-    {
+-        /* None */
+-    },
+-    {
+-        /* None */
+-    },
+-};
+-
+-/* DSS Pipeline Configuration Params */
+-Dss_ConfigPipelineParams gDssConfigPipelineParams[CONFIG_DSS_NUM_INSTANCES] =
+-{
+-    {
+-        /**< Number of pipes in test params */
+-        .numTestPipes = CSL_DSS_NUM_PIPE_PER_DSS_INSTANCE,
+-        /**< Driver instance id */
+-        .instId = {
+-          CSL_DSS_VID_PIPE_ID_VID1,
+-          CSL_DSS_VID_PIPE_ID_VIDL1
+-        },
+-        /**< Pipe id */
+-        .pipeId = {
+-            CSL_DSS_VID_PIPE_ID_VID1,
+-            CSL_DSS_VID_PIPE_ID_VIDL1
+-        },
+-        /**< Pipe Node id */
+-        .pipeNodeId = {
+-            DSS_DCTRL_NODE_VID1,
+-            DSS_DCTRL_NODE_VIDL1
+-        },
+-        /**< Video pipe type */
+-        .pipeType = {
+-            CSL_DSS_VID_PIPE_TYPE_VID,
+-            CSL_DSS_VID_PIPE_TYPE_VIDL
+-        },
+-        /**< Data format */
+-        .inDataFmt= {
+-            FVID2_DF_BGRA32_8888,
+-            FVID2_DF_BGRA32_8888,
+-        },
+-        /**< Input buffer resolution width in pixels */
+-        .inWidth = {
+-            480U,
+-            480U,
+-        },
+-        /**< Input buffer resolution height in lines */
+-        .inHeight = {
+-            360U,
+-            360U,
+-        },
+-        /**< Pitch of input buffer */
+-        .pitch = {
+-            {
+-                480*4U, 0U, 0U, 0U, 0U, 0U,
+-            },
+-            {
+-                480*4U, 0U, 0U, 0U, 0U, 0U,
+-            }
+-        },
+-        /**< Scan format */
+-        .inScanFmt = {
+-            FVID2_SF_PROGRESSIVE,
+-            FVID2_SF_PROGRESSIVE
+-        },
+-        /**< Output buffer resolution width in pixels */
+-        .outWidth = {
+-            720U,
+-            480U,
+-        },
+-        /**< Output buffer resolution height in lines */
+-        .outHeight= {
+-            540U,
+-            360U,
+-        },
+-        /**< Scaler enable */
+-        .scEnable = {
+-            TRUE,
+-            FALSE
+-        },
+-        /**< Global Alpha value */
+-        .globalAlpha = {
+-            0xFF,
+-            0xFF
+-        },
+-        /**< Pre-multiply Alpha value */
+-        .preMultiplyAlpha = {
+-            FALSE,
+-            FALSE
+-        },
+-        /**< Input buffer position x. */
+-        .posx = {
+-            0U,
+-            1440U
+-        },
+-        /**< Input buffer position y. */
+-        .posy = {
+-            0U,
+-            720U
+-        },
+-        /**< Invalid Pipe id */
+-        .invalidPipeId = {
+-            CSL_DSS_VID_PIPE_ID_INVALID,
+-            CSL_DSS_VID_PIPE_ID_INVALID
+-        },
+-        /**< Safety Check */
+-        .safetyCheck = {
+-            FALSE,
+-            FALSE,
+-        }
+-    },
+-    {
+-        /**< Number of pipes in test params */
+-        .numTestPipes = CSL_DSS_NUM_PIPE_PER_DSS_INSTANCE,
+-        /**< Driver instance id */
+-        .instId = {
+-            CSL_DSS_VID_PIPE_ID_VID2,
+-            CSL_DSS_VID_PIPE_ID_VIDL2
+-        },
+-        /**< Pipe id */
+-        .pipeId = {
+-            CSL_DSS_VID_PIPE_ID_VID2,
+-            CSL_DSS_VID_PIPE_ID_VIDL2
+-        },
+-        /**< Pipe Node id */
+-        .pipeNodeId = {
+-            DSS_DCTRL_NODE_VID2,
+-            DSS_DCTRL_NODE_VIDL2,
+-        },
+-        /**< Video pipe type */
+-        .pipeType = {
+-            CSL_DSS_VID_PIPE_TYPE_VID,
+-            CSL_DSS_VID_PIPE_TYPE_VIDL
+-        },
+-        /**< Data format */
+-        .inDataFmt= {
+-            FVID2_DF_BGRA32_8888,
+-            FVID2_DF_BGRA32_8888,
+-        },
+-        /**< Input buffer resolution width in pixels */
+-        .inWidth = {
+-            480U,
+-            480U,
+-        },
+-        /**< Input buffer resolution height in lines */
+-        .inHeight = {
+-            360U,
+-            360U,
+-        },
+-        /**< Pitch of input buffer */
+-        .pitch = {
+-            {
+-                480*4U, 0U, 0U, 0U, 0U, 0U,
+-            },
+-            {
+-                480*4U, 0U, 0U, 0U, 0U, 0U,
+-            }
+-        },
+-        /**< Scan format */
+-        .inScanFmt = {
+-            FVID2_SF_PROGRESSIVE,
+-            FVID2_SF_PROGRESSIVE
+-        },
+-        /**< Output buffer resolution width in pixels */
+-        .outWidth = {
+-            720U,
+-            480U,
+-        },
+-        /**< Output buffer resolution height in lines */
+-        .outHeight= {
+-            540U,
+-            360U,
+-        },
+-        /**< Scaler enable */
+-        .scEnable = {
+-            TRUE,
+-            FALSE
+-        },
+-        /**< Global Alpha value */
+-        .globalAlpha = {
+-            0xFF,
+-            0xFF
+-        },
+-        /**< Pre-multiply Alpha value */
+-        .preMultiplyAlpha = {
+-            FALSE,
+-            FALSE
+-        },
+-        /**< Input buffer position x. */
+-        .posx = {
+-            0U,
+-            1440U
+-        },
+-        /**< Input buffer position y. */
+-        .posy = {
+-            0U,
+-            720U
+-        },
+-        /**< Invalid Pipe id */
+-        .invalidPipeId = {
+-            CSL_DSS_VID_PIPE_ID_INVALID,
+-            CSL_DSS_VID_PIPE_ID_INVALID
+-        },
+-        /**< Safety Check */
+-        .safetyCheck = {
+-            FALSE,
+-            FALSE,
+-        }
+-    },
+-};
+-
+-static Fvid2_Frame gFramesVID1[CONFIG_DSS_NUM_FRAMES_PER_PIPELINE];
+-static Fvid2_Frame gFramesVIDL1[CONFIG_DSS_NUM_FRAMES_PER_PIPELINE];
+-static Fvid2_Frame gFramesVID2[CONFIG_DSS_NUM_FRAMES_PER_PIPELINE];
+-static Fvid2_Frame gFramesVIDL2[CONFIG_DSS_NUM_FRAMES_PER_PIPELINE];
+-
+-Dss_Object gDssObjects[CONFIG_DSS_NUM_INSTANCES] =
+-{
+-    {
+-        .instObj =
+-        {
+-            {
+-                .numFrames = CONFIG_DSS_NUM_FRAMES_PER_PIPELINE,
+-                .frames = gFramesVID1,
+-            },
+-            {
+-                .numFrames = CONFIG_DSS_NUM_FRAMES_PER_PIPELINE,
+-                .frames = gFramesVIDL1,
+-            }
+-        },
+-        .dctrlPathInfo = &gDssPathInfo,
+-        .oldiParams = NULL,
+-    },
+-    {
+-        .instObj =
+-        {
+-            {
+-                .numFrames = CONFIG_DSS_NUM_FRAMES_PER_PIPELINE,
+-                .frames = gFramesVID2,
+-            },
+-            {
+-                .numFrames = CONFIG_DSS_NUM_FRAMES_PER_PIPELINE,
+-                .frames = gFramesVIDL2,
+-            }
+-        },
+-        .dctrlPathInfo = &gDssPathInfo,
+-        .oldiParams = NULL,
+-    },
+-};
+-
+-uint32_t gDssConfigNum = CONFIG_DSS_NUM_INSTANCES;
+-
+-
+-/*
+- * I2C
+- */
+-/* I2C atrributes */
+-static I2C_HwAttrs gI2cHwAttrs[CONFIG_I2C_NUM_INSTANCES] =
+-{
+-    {
+-        .baseAddr       = CSL_I2C1_CFG_BASE,
+-        .intNum         = 194,
+-        .eventId        = 0,
+-        .funcClk        = 96000000U,
+-        .enableIntr     = 1,
+-        .intrPriority   = 4,
+-        .ownTargetAddr   =
+-        {
+-            0x1C,
+-            0x1C,
+-            0x1C,
+-            0x1C,
+-        },
+-    },
+-    {
+-        .baseAddr       = CSL_I2C2_CFG_BASE,
+-        .intNum         = 195,
+-        .eventId        = 0,
+-        .funcClk        = 96000000U,
+-        .enableIntr     = 1,
+-        .intrPriority   = 4,
+-        .ownTargetAddr   =
+-        {
+-            0x1C,
+-            0x1C,
+-            0x1C,
+-            0x1C,
+-        },
+-    },
+-};
+-/* I2C objects - initialized by the driver */
+-static I2C_Object gI2cObjects[CONFIG_I2C_NUM_INSTANCES];
+-/* I2C driver configuration */
+-I2C_Config gI2cConfig[CONFIG_I2C_NUM_INSTANCES] =
+-{
+-    {
+-        .object = &gI2cObjects[HDMI_AND_DSI_BRIDGE_I2C_CONFIG],
+-        .hwAttrs = &gI2cHwAttrs[HDMI_AND_DSI_BRIDGE_I2C_CONFIG]
+-    },
+-    {
+-        .object = &gI2cObjects[CONFIG_I2C2],
+-        .hwAttrs = &gI2cHwAttrs[CONFIG_I2C2]
+-    },
+-};
+-
+-uint32_t gI2cConfigNum = CONFIG_I2C_NUM_INSTANCES;
+-
+ /*
+  * UDMA
+  */
+@@ -575,7 +89,6 @@ void PowerClock_deinit(void);
+         /* Now we can do pinmux */
+         Pinmux_init();
+         /* finally we initialize all peripheral drivers */
+-                I2C_init();
+                 /* UDMA */
+     {
+         uint32_t        instId;
+@@ -618,7 +131,6 @@ void System_init(void)
+     /* Now we can do pinmux */
+     Pinmux_init();
+     /* finally we initialize all peripheral drivers */
+-    I2C_init();
+     /* UDMA */
+     {
+         uint32_t        instId;
+@@ -635,7 +147,6 @@ void System_init(void)
+ 
+ void System_deinit(void)
+ {
+-    I2C_deinit();
+     /* UDMA */
+     {
+         uint32_t        instId;
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config.h b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config.h
+index c27b45c..c8d32d0 100644
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config.h
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config.h
+@@ -53,38 +53,6 @@ void System_deinit(void);
+ 
+ 
+ 
+-/*
+- * DSS
+- */
+-#include <drivers/dss.h>
+-#include <drivers/fvid2.h>
+-
+-#define CONFIG_DSS_NUM_FRAMES_PER_PIPELINE     2U
+-
+-#define CONFIG_DSS_NUM_SAFETY_REGIONS          0U
+-
+-
+-
+-/* DSS Instance Macros */
+-#define CONFIG_DSS0 (0U)
+-#define CONFIG_DSS1 (1U)
+-#define CONFIG_DSS_NUM_INSTANCES (2U)
+-
+-#define DSS_HDMI_INTERFACE  (0U)
+-#define DSS_OLDI_INTERFACE  (1U)
+-#define DSS_DSI_INTERFACE   (2U)
+-#define DSS_MAX_INTERFACES  (3U)
+-
+-/*
+- * I2C
+- */
+-#include <drivers/i2c.h>
+-
+-/* I2C Instance Macros */
+-#define HDMI_AND_DSI_BRIDGE_I2C_CONFIG (0U)
+-#define CONFIG_I2C2 (1U)
+-#define CONFIG_I2C_NUM_INSTANCES (2U)
+-
+ 
+ /* ENET MACROS */
+ 
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config_openhd.c b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config_openhd.c
+new file mode 100644
+index 0000000..4413912
+--- /dev/null
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_config_openhd.c
+@@ -0,0 +1,241 @@
++/*
++ *  Copyright (C) 2021-2025 Texas Instruments Incorporated
++ *
++ *  Redistribution and use in source and binary forms, with or without
++ *  modification, are permitted provided that the following conditions
++ *  are met:
++ *
++ *    Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ *    Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the
++ *    distribution.
++ *
++ *    Neither the name of Texas Instruments Incorporated nor the names of
++ *    its contributors may be used to endorse or promote products derived
++ *    from this software without specific prior written permission.
++ *
++ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++/*
++ * Auto generated file
++ */
++
++#include "ti_drivers_config.h"
++#include <drivers/sciclient.h>
++
++
++
++/*
++ * UDMA
++ */
++
++/* UDMA driver instance object */
++Udma_DrvObject          gUdmaDrvObj[CONFIG_UDMA_NUM_INSTANCES];
++/* UDMA driver instance init params */
++static Udma_InitPrms    gUdmaInitPrms[CONFIG_UDMA_NUM_INSTANCES] =
++{
++    {
++        .instId             = UDMA_INST_ID_BCDMA_0,
++        .enableUtc          = FALSE,
++        .skipGlobalEventReg = FALSE,
++        .virtToPhyFxn       = Udma_defaultVirtToPhyFxn,
++        .phyToVirtFxn       = Udma_defaultPhyToVirtFxn,
++    },
++    {
++        .instId             = UDMA_INST_ID_PKTDMA_0,
++        .enableUtc          = FALSE,
++        .skipGlobalEventReg = FALSE,
++        .virtToPhyFxn       = Udma_defaultVirtToPhyFxn,
++        .phyToVirtFxn       = Udma_defaultPhyToVirtFxn,
++    },
++};
++
++
++void Pinmux_init();
++void PowerClock_init(void);
++void PowerClock_deinit(void);
++
++/*
++ * Common Functions
++ */
++#if defined(OS_SAFERTOS)
++    void System_lateInit(void)
++    {
++        /* We should do sciclient init before we enable power and clock to the peripherals */
++            /* SCICLIENT init */
++    {
++
++        int32_t retVal = SystemP_SUCCESS;
++
++        retVal = Sciclient_init(CSL_CORE_ID_MAIN_R5FSS0_0);
++        DebugP_assertNoLog(SystemP_SUCCESS == retVal);
++
++    }
++
++        PowerClock_init();
++        /* Now we can do pinmux */
++        Pinmux_init();
++        /* finally we initialize all peripheral drivers */
++                /* UDMA */
++    {
++        uint32_t        instId;
++        int32_t         retVal = UDMA_SOK;
++
++        for(instId = 0U; instId < CONFIG_UDMA_NUM_INSTANCES; instId++)
++        {
++            retVal += Udma_init(&gUdmaDrvObj[instId], &gUdmaInitPrms[instId]);
++            DebugP_assert(UDMA_SOK == retVal);
++        }
++    }
++    }
++#endif
++
++
++/* OPENHD_SYSINIT_TRACE_BEGIN */
++extern char Ipc_traceBuffer[];
++
++#define OPENHD_SYS_TRACE_BUFFER_SIZE  (0x80000U)
++#define OPENHD_SYS_TRACE_REGION_SIZE  (0x1000U)
++#define OPENHD_SYS_TRACE_SLOT_SIZE    (64U)
++#define OPENHD_SYS_TRACE_BASE_OFFSET  \
++    (OPENHD_SYS_TRACE_BUFFER_SIZE - OPENHD_SYS_TRACE_REGION_SIZE)
++
++static void openhdSysTraceMark(unsigned int slot, const char *marker)
++{
++    volatile char *dst;
++    unsigned int offset;
++    unsigned int i;
++
++    offset = OPENHD_SYS_TRACE_BASE_OFFSET +
++             (slot * OPENHD_SYS_TRACE_SLOT_SIZE);
++
++    if (offset >= OPENHD_SYS_TRACE_BUFFER_SIZE)
++    {
++        return;
++    }
++
++    dst = (volatile char *)&Ipc_traceBuffer[offset];
++
++    for (i = 0U;
++         (i < (OPENHD_SYS_TRACE_SLOT_SIZE - 1U)) &&
++         (marker[i] != '\0');
++         i++)
++    {
++        dst[i] = marker[i];
++    }
++
++    dst[i] = '\0';
++    __asm__ volatile ("" : : : "memory");
++}
++/* OPENHD_SYSINIT_TRACE_END */
++
++void System_init(void)
++{
++    openhdSysTraceMark(20U, "OHDBG S00 System_init entered");
++    /* DPL init sets up address transalation unit, on some CPUs this is needed
++     * to access SCICLIENT services, hence this needs to happen first
++     */
++    openhdSysTraceMark(21U, "OHDBG S01 before Dpl_init");
++    Dpl_init();
++    openhdSysTraceMark(22U, "OHDBG S02 after Dpl_init");
++#if defined(SOC_J722S) && !defined(OS_SAFERTOS)
++    /* We should do sciclient init before we enable power and clock to the peripherals */
++    /* SCICLIENT init */
++    {
++
++        int32_t retVal = SystemP_SUCCESS;
++
++        openhdSysTraceMark(23U, "OHDBG S03 before Sciclient_init");
++        retVal = Sciclient_init(CSL_CORE_ID_MAIN_R5FSS0_0);
++        openhdSysTraceMark(24U, "OHDBG S04 after Sciclient_init");
++
++        if (retVal == SystemP_SUCCESS)
++        {
++            openhdSysTraceMark(25U, "OHDBG S05 Sciclient success");
++        }
++        else
++        {
++            openhdSysTraceMark(26U, "OHDBG S06 Sciclient failure");
++        }
++        DebugP_assertNoLog(SystemP_SUCCESS == retVal);
++
++    }
++
++
++   
++    /* initialize PMU */
++    openhdSysTraceMark(27U, "OHDBG S07 before cycle counter");
++    CycleCounterP_init(SOC_getSelfCpuClk());
++    openhdSysTraceMark(28U, "OHDBG S08 after cycle counter");
++
++
++    openhdSysTraceMark(29U, "OHDBG S09 before PowerClock_init");
++    PowerClock_init();
++    openhdSysTraceMark(30U, "OHDBG S10 after PowerClock_init");
++    /* Now we can do pinmux */
++    openhdSysTraceMark(31U, "OHDBG S11 before Pinmux_init");
++    Pinmux_init();
++    openhdSysTraceMark(32U, "OHDBG S12 after Pinmux_init");
++    /* finally we initialize all peripheral drivers */
++    /* UDMA */
++    {
++        uint32_t        instId;
++        int32_t         retVal = UDMA_SOK;
++
++        for(instId = 0U; instId < CONFIG_UDMA_NUM_INSTANCES; instId++)
++        {
++            openhdSysTraceMark(33U, "OHDBG S13 before Udma_init");
++            retVal += Udma_init(&gUdmaDrvObj[instId], &gUdmaInitPrms[instId]);
++            openhdSysTraceMark(34U, "OHDBG S14 after Udma_init");
++
++            if (retVal == UDMA_SOK)
++            {
++                openhdSysTraceMark(35U, "OHDBG S15 UDMA success");
++            }
++            else
++            {
++                openhdSysTraceMark(36U, "OHDBG S16 UDMA failure");
++            }
++            DebugP_assert(UDMA_SOK == retVal);
++        }
++    }
++#endif
++    openhdSysTraceMark(37U, "OHDBG S17 System_init returning");
++}
++
++void System_deinit(void)
++{
++    /* UDMA */
++    {
++        uint32_t        instId;
++        int32_t         retVal = UDMA_SOK;
++
++        for(instId = 0U; instId < CONFIG_UDMA_NUM_INSTANCES; instId++)
++        {
++            retVal += Udma_deinit(&gUdmaDrvObj[instId]);
++            DebugP_assert(UDMA_SOK == retVal);
++        }
++    }
++    PowerClock_deinit();
++    /* SCICLIENT deinit */
++    {
++        int32_t         retVal = SystemP_SUCCESS;
++
++        retVal = Sciclient_deinit();
++        DebugP_assertNoLog(SystemP_SUCCESS == retVal);
++    }
++    Dpl_deinit();
++}
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_open_close.c b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_open_close.c
+index 7ca421f..dfa23e6 100644
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_open_close.c
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_open_close.c
+@@ -41,7 +41,6 @@ void Drivers_open(void)
+ {
+ 
+ 
+-    Drivers_i2cOpen();
+     Drivers_udmaOpen();
+ 
+ 
+@@ -51,80 +50,10 @@ void Drivers_close(void)
+ {
+ 
+ 
+-    Drivers_i2cClose();
+     Drivers_udmaClose();
+ 
+ }
+ 
+-/*
+- * I2C
+- */
+-
+-/* I2C Driver handles */
+-I2C_Handle gI2cHandle[CONFIG_I2C_NUM_INSTANCES];
+-
+-/* I2C Driver Parameters */
+-I2C_Params gI2cParams[CONFIG_I2C_NUM_INSTANCES] =
+-{
+-    {
+-        .transferMode        = I2C_MODE_BLOCKING,
+-        .transferCallbackFxn = NULL,
+-        .bitRate             = I2C_100KHZ,
+-    },
+-    {
+-        .transferMode        = I2C_MODE_BLOCKING,
+-        .transferCallbackFxn = NULL,
+-        .bitRate             = I2C_400KHZ,
+-    },
+-};
+-
+-void Drivers_i2cOpen(void)
+-{
+-    uint32_t instCnt;
+-    int32_t  status = SystemP_SUCCESS;
+-
+-    for(instCnt = 0U; instCnt < CONFIG_I2C_NUM_INSTANCES; instCnt++)
+-    {
+-        gI2cHandle[instCnt] = NULL;   /* Init to NULL so that we can exit gracefully */
+-    }
+-
+-    /* Open all instances */
+-    for(instCnt = 0U; instCnt < CONFIG_I2C_NUM_INSTANCES; instCnt++)
+-    {
+-        gI2cHandle[instCnt] = I2C_open(instCnt, &gI2cParams[instCnt]);
+-        if(NULL == gI2cHandle[instCnt])
+-        {
+-            DebugP_logError("I2C open failed for instance %d !!!\r\n", instCnt);
+-            status = SystemP_FAILURE;
+-            break;
+-        }
+-    }
+-
+-    if(SystemP_FAILURE == status)
+-    {
+-        Drivers_i2cClose();   /* Exit gracefully */
+-    }
+-
+-    return;
+-}
+-
+-void Drivers_i2cClose(void)
+-{
+-    uint32_t instCnt;
+-
+-    /* Close all instances that are open */
+-    for(instCnt = 0U; instCnt < CONFIG_I2C_NUM_INSTANCES; instCnt++)
+-    {
+-        if(gI2cHandle[instCnt] != NULL)
+-        {
+-            I2C_close(gI2cHandle[instCnt]);
+-            gI2cHandle[instCnt] = NULL;
+-        }
+-    }
+-
+-    return;
+-}
+-
+ /*
+  * UDMA
+  */
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_open_close.h b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_open_close.h
+index aed3fc3..7a6714e 100644
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_open_close.h
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_drivers_open_close.h
+@@ -50,62 +50,6 @@ extern "C" {
+ void Drivers_open(void);
+ void Drivers_close(void);
+ 
+-/*
+- * DSS
+- */
+-#include <drivers/dss.h>
+-
+-/* DSS VP Params */
+-extern Dss_DctrlVpParams gDssVpParams[CONFIG_DSS_NUM_INSTANCES];
+-
+-/* DSS VP Advance Params */
+-extern Dss_DctrlAdvVpParams gDssAdvVpParams[CONFIG_DSS_NUM_INSTANCES];
+-
+-/* DSS Overlay Params */
+-extern Dss_DctrlOverlayParams gDssOverlayParams[CONFIG_DSS_NUM_INSTANCES];
+-
+-/* DSS Overlay Layer Params */
+-extern Dss_DctrlOverlayLayerParams gDssOverlayLayerParams[CONFIG_DSS_NUM_INSTANCES];
+-
+-/* DSS Pipeline Configuration Params */
+-extern Dss_ConfigPipelineParams gDssConfigPipelineParams[CONFIG_DSS_NUM_INSTANCES];
+-
+-/* DSS Pipeline Safety Configuration Params */
+-extern Dss_DispPipeSafetyChkParams gDssPipelineSafetyParams[CSL_DSS_VID_PIPE_ID_MAX];
+-
+-/* DSS VP Safety Configuration Params */
+-extern Dss_DctrlVpSafetyChkParams gDssVpSafetyParams[CONFIG_DSS_NUM_SAFETY_REGIONS];
+-
+-/* DSS driver object */
+-extern Dss_Object gDssObjects[CONFIG_DSS_NUM_INSTANCES];
+-
+-/* DSS display interface being used */
+-extern uint32_t gDssDisplayInterface[CONFIG_DSS_NUM_INSTANCES];
+-
+-/* DSI Params*/
+-extern Dss_DctrlDsiParams gDsiParams;
+-
+-
+-/*
+- * I2C
+- */
+-#include <drivers/i2c.h>
+-
+-/* I2C Driver handles */
+-extern I2C_Handle gI2cHandle[CONFIG_I2C_NUM_INSTANCES];
+-
+-/*
+- * I2C Driver Advance Parameters - to be used only when Driver_open() and
+- * Driver_close() is not used by the application
+- */
+-/* I2C Driver Parameters */
+-extern I2C_Params gI2cParams[CONFIG_I2C_NUM_INSTANCES];
+-/* I2C Driver open/close - can be used by application when Driver_open() and
+- * Driver_close() is not used directly and app wants to control the various driver
+- * open/close sequences */
+-void Drivers_i2cOpen(void);
+-void Drivers_i2cClose(void);
+-
+ /*
+  * UDMA
+  */
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_pinmux_config.c b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_pinmux_config.c
+index 9763314..9d21027 100644
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_pinmux_config.c
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_pinmux_config.c
+@@ -37,181 +37,6 @@
+ #include <drivers/pinmux.h>
+ 
+ static Pinmux_PerCfg_t gPinMuxMainDomainCfg[] = {
+-
+-    /* DSS0 pin config */
+-            /* VOUT0_DATA0 -> VOUT0_DATA0 (W27) */
+-    {
+-        PIN_VOUT0_DATA0,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA1 -> VOUT0_DATA1 (W25) */
+-    {
+-        PIN_VOUT0_DATA1,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA2 -> VOUT0_DATA2 (W24) */
+-    {
+-        PIN_VOUT0_DATA2,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA3 -> VOUT0_DATA3 (W23) */
+-    {
+-        PIN_VOUT0_DATA3,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA4 -> VOUT0_DATA4 (W22) */
+-    {
+-        PIN_VOUT0_DATA4,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA5 -> VOUT0_DATA5 (W21) */
+-    {
+-        PIN_VOUT0_DATA5,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA6 -> VOUT0_DATA6 (Y26) */
+-    {
+-        PIN_VOUT0_DATA6,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA7 -> VOUT0_DATA7 (Y27) */
+-    {
+-        PIN_VOUT0_DATA7,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA8 -> VOUT0_DATA8 (AA24) */
+-    {
+-        PIN_VOUT0_DATA8,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA9 -> VOUT0_DATA9 (AA27) */
+-    {
+-        PIN_VOUT0_DATA9,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA10 -> VOUT0_DATA10 (AA25) */
+-    {
+-        PIN_VOUT0_DATA10,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA11 -> VOUT0_DATA11 (AB25) */
+-    {
+-        PIN_VOUT0_DATA11,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA12 -> VOUT0_DATA12 (AA23) */
+-    {
+-        PIN_VOUT0_DATA12,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA13 -> VOUT0_DATA13 (AA22) */
+-    {
+-        PIN_VOUT0_DATA13,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA14 -> VOUT0_DATA14 (AB26) */
+-    {
+-        PIN_VOUT0_DATA14,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA15 -> VOUT0_DATA15 (AB27) */
+-    {
+-        PIN_VOUT0_DATA15,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA16 -> GPMC0_AD8 (U27) */
+-    {
+-        PIN_GPMC0_AD8,
+-        ( PIN_MODE(1) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA17 -> GPMC0_AD9 (U26) */
+-    {
+-        PIN_GPMC0_AD9,
+-        ( PIN_MODE(1) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA18 -> GPMC0_AD10 (V27) */
+-    {
+-        PIN_GPMC0_AD10,
+-        ( PIN_MODE(1) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA19 -> GPMC0_AD11 (V25) */
+-    {
+-        PIN_GPMC0_AD11,
+-        ( PIN_MODE(1) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA20 -> GPMC0_AD12 (V26) */
+-    {
+-        PIN_GPMC0_AD12,
+-        ( PIN_MODE(1) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA21 -> GPMC0_AD13 (V24) */
+-    {
+-        PIN_GPMC0_AD13,
+-        ( PIN_MODE(1) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA22 -> GPMC0_AD14 (V22) */
+-    {
+-        PIN_GPMC0_AD14,
+-        ( PIN_MODE(1) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DATA23 -> GPMC0_AD15 (V23) */
+-    {
+-        PIN_GPMC0_AD15,
+-        ( PIN_MODE(1) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_DE -> VOUT0_DE (AC27) */
+-    {
+-        PIN_VOUT0_DE,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_EXTPCLKIN -> GPMC0_WAIT1 (W26) */
+-    {
+-        PIN_GPMC0_WAIT1,
+-        ( PIN_MODE(1) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_HSYNC -> VOUT0_HSYNC (AB24) */
+-    {
+-        PIN_VOUT0_HSYNC,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_PCLK -> VOUT0_PCLK (AC26) */
+-    {
+-        PIN_VOUT0_PCLK,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-            /* VOUT0_VSYNC -> VOUT0_VSYNC (AB23) */
+-    {
+-        PIN_VOUT0_VSYNC,
+-        ( PIN_MODE(0) | PIN_PULL_DISABLE )
+-    },
+-
+-    /* DSS0 pin config */
+-
+-
+-    /* I2C1 pin config */
+-            /* I2C1_SCL -> I2C1_SCL (C24) */
+-    {
+-        PIN_I2C1_SCL,
+-        ( PIN_MODE(0) | PIN_INPUT_ENABLE | PIN_PULL_DIRECTION )
+-    },
+-            /* I2C1_SDA -> I2C1_SDA (A22) */
+-    {
+-        PIN_I2C1_SDA,
+-        ( PIN_MODE(0) | PIN_INPUT_ENABLE | PIN_PULL_DIRECTION )
+-    },
+-
+-    /* I2C2 pin config */
+-            /* I2C2_SCL -> GPMC0_CSn2 (P22) */
+-    {
+-        PIN_GPMC0_CSN2,
+-        ( PIN_MODE(1) | PIN_INPUT_ENABLE | PIN_PULL_DIRECTION )
+-    },
+-            /* I2C2_SDA -> GPMC0_CSn3 (P23) */
+-    {
+-        PIN_GPMC0_CSN3,
+-        ( PIN_MODE(1) | PIN_INPUT_ENABLE | PIN_PULL_DIRECTION )
+-    },
+-
+             /* MDIO0 pin config */
+     /* MDIO0_MDC -> MDIO0_MDC (AC24) */
+     {
+@@ -289,12 +114,6 @@ static Pinmux_PerCfg_t gPinMuxMainDomainCfg[] = {
+ };
+ 
+ static Pinmux_PerCfg_t gPinMuxMcuDomainCfg[] = {
+-
+-
+-
+-
+-
+-
+         
+     {PINMUX_END, 0U}
+ };
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_power_clock_config.c b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_power_clock_config.c
+index ce7b0fb..48374fb 100644
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_power_clock_config.c
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_power_clock_config.c
+@@ -46,42 +46,14 @@ typedef struct {
+ } SOC_ModuleClockFrequency;
+ 
+ uint32_t gSocModules[] = {
+-    TISCI_DEV_DSS0,
+-    TISCI_DEV_OLDI0_VD,
+-    TISCI_DEV_OLDI1_VD,
+-    TISCI_DEV_DSS1,
+-    TISCI_DEV_DSS_DSI0,
+-    TISCI_DEV_DPHY_TX0,
+-
+-    TISCI_DEV_I2C1,
+-    TISCI_DEV_I2C2,
+-
+     TISCI_DEV_CPSW0,
+ 
+-    TISCI_DEV_CSI_RX_IF0,
+-    TISCI_DEV_CSI_RX_IF1,
+-    TISCI_DEV_DPHY_RX0,
+-    TISCI_DEV_DPHY_RX1,
+-    TISCI_DEV_VPAC0,
+-    TISCI_DEV_DMPAC0,
+-    TISCI_DEV_JPGENC0,
+-    TISCI_DEV_DDR32SS0,
+-
+     SOC_MODULES_END,
+ };
+ 
+ SOC_ModuleClockFrequency gSocModulesClockFrequency[] = {
+-    { TISCI_DEV_DSS0, TISCI_DEV_DSS0_DPI_1_IN_CLK, 148500000 },
+-    { TISCI_DEV_DSS0, TISCI_DEV_DSS0_DPI_0_IN_CLK, 1051925000 },
+-    { TISCI_DEV_DSS1, TISCI_DEV_DSS1_DPI_1_IN_CLK, 150000000 },
+-
+-
+     { TISCI_DEV_CPSW0, TISCI_DEV_CPSW0_CPTS_RFT_CLK, 200000000 },
+ 
+-    { TISCI_DEV_A53SS0_CORE_0, TISCI_DEV_A53SS0_CORE_0_A53_CORE0_ARM_CLK_CLK, 1250000000 },
+-    { TISCI_DEV_VPAC0, TISCI_DEV_VPAC0_VPAC_PLL_CLK, 600000000 },
+-    { TISCI_DEV_DMPAC0, TISCI_DEV_DMPAC0_DMPAC_PLL_CLK, 428571428 },
+-
+     { SOC_MODULES_END, SOC_MODULES_END, SOC_MODULES_END },
+ };
+ 
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_power_clock_config_openhd.c b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_power_clock_config_openhd.c
+new file mode 100644
+index 0000000..f798b0b
+--- /dev/null
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/generated/ti_power_clock_config_openhd.c
+@@ -0,0 +1,180 @@
++/*
++ *  Copyright (C) 2021 Texas Instruments Incorporated
++ *
++ *  Redistribution and use in source and binary forms, with or without
++ *  modification, are permitted provided that the following conditions
++ *  are met:
++ *
++ *    Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ *
++ *    Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the
++ *    distribution.
++ *
++ *    Neither the name of Texas Instruments Incorporated nor the names of
++ *    its contributors may be used to endorse or promote products derived
++ *    from this software without specific prior written permission.
++ *
++ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++/*
++ * Auto generated file
++ */
++#include <kernel/dpl/DebugP.h>
++#include <drivers/soc.h>
++
++/* OPENHD_POWER_CLOCK_TRACE_BEGIN */
++extern char Ipc_traceBuffer[];
++
++#define OPENHD_PC_TRACE_BUFFER_SIZE  (0x80000U)
++#define OPENHD_PC_TRACE_REGION_SIZE  (0x1000U)
++#define OPENHD_PC_TRACE_SLOT_SIZE    (64U)
++#define OPENHD_PC_TRACE_BASE_OFFSET  \
++    (OPENHD_PC_TRACE_BUFFER_SIZE - OPENHD_PC_TRACE_REGION_SIZE)
++
++static void openhdPcTraceMark(unsigned int slot, const char *marker)
++{
++    volatile char *dst;
++    unsigned int offset;
++    unsigned int i;
++
++    offset = OPENHD_PC_TRACE_BASE_OFFSET +
++             (slot * OPENHD_PC_TRACE_SLOT_SIZE);
++
++    if (offset >= OPENHD_PC_TRACE_BUFFER_SIZE)
++    {
++        return;
++    }
++
++    dst = (volatile char *)&Ipc_traceBuffer[offset];
++
++    for (i = 0U;
++         (i < (OPENHD_PC_TRACE_SLOT_SIZE - 1U)) &&
++         (marker[i] != '\0');
++         i++)
++    {
++        dst[i] = marker[i];
++    }
++
++    dst[i] = '\0';
++    __asm__ volatile ("" : : : "memory");
++}
++/* OPENHD_POWER_CLOCK_TRACE_END */
++
++
++#define SOC_MODULES_END     (0xFFFFFFFFu)
++
++typedef struct {
++
++    uint32_t moduleId;
++    uint32_t clkId;
++    uint32_t clkRate;
++
++} SOC_ModuleClockFrequency;
++
++uint32_t gSocModules[] = {
++    TISCI_DEV_CPSW0,
++
++    SOC_MODULES_END,
++};
++
++SOC_ModuleClockFrequency gSocModulesClockFrequency[] = {
++    { TISCI_DEV_CPSW0, TISCI_DEV_CPSW0_CPTS_RFT_CLK, 200000000 },
++
++    { SOC_MODULES_END, SOC_MODULES_END, SOC_MODULES_END },
++};
++
++
++void Module_clockEnable(void)
++{
++    int32_t status;
++    uint32_t i = 0;
++
++    while(gSocModules[i]!=SOC_MODULES_END)
++    {
++        openhdPcTraceMark(45U, "OHDBG E00 before CPSW enable");
++        status = SOC_moduleClockEnable(gSocModules[i], 1);
++        openhdPcTraceMark(46U, "OHDBG E01 after CPSW enable");
++        if (status == SystemP_SUCCESS)
++        {
++            openhdPcTraceMark(47U, "OHDBG E02 CPSW enable success");
++        }
++        else
++        {
++            openhdPcTraceMark(48U, "OHDBG E03 CPSW enable failure");
++        }
++        DebugP_assertNoLog(status == SystemP_SUCCESS);
++        i++;
++    }
++}
++
++void Module_clockDisable(void)
++{
++    int32_t status;
++    uint32_t i = 0;
++
++    while(gSocModules[i]!=SOC_MODULES_END)
++    {
++        status = SOC_moduleClockEnable(gSocModules[i], 0);
++        DebugP_assertNoLog(status == SystemP_SUCCESS);
++        i++;
++    }
++}
++
++void Module_clockSetFrequency(void)
++{
++    int32_t status;
++    uint32_t i = 0;
++
++    while(gSocModulesClockFrequency[i].moduleId!=SOC_MODULES_END)
++    {
++        openhdPcTraceMark(49U, "OHDBG F00 before CPSW CPTS frequency");
++        status = SOC_moduleSetClockFrequency(
++                    gSocModulesClockFrequency[i].moduleId,
++                    gSocModulesClockFrequency[i].clkId,
++                    gSocModulesClockFrequency[i].clkRate
++                    );
++        openhdPcTraceMark(50U, "OHDBG F01 after CPSW CPTS frequency");
++        if (status == SystemP_SUCCESS)
++        {
++            openhdPcTraceMark(51U, "OHDBG F02 CPSW frequency success");
++        }
++        else
++        {
++            openhdPcTraceMark(52U, "OHDBG F03 CPSW frequency failure");
++        }
++        DebugP_assertNoLog(status == SystemP_SUCCESS);
++        i++;
++    }
++}
++
++
++void PowerClock_init(void)
++{
++    openhdPcTraceMark(40U, "OHDBG P00 PowerClock entered");
++
++    openhdPcTraceMark(41U, "OHDBG P01 before Module_clockEnable");
++    Module_clockEnable();
++    openhdPcTraceMark(42U, "OHDBG P02 after Module_clockEnable");
++
++    openhdPcTraceMark(43U, "OHDBG P03 before clock frequency");
++    openhdPcTraceMark(53U, "OHDBG F04 CPSW frequency skipped");
++    openhdPcTraceMark(44U, "OHDBG P04 after clock frequency");
++}
++
++void PowerClock_deinit()
++{
++    Module_clockDisable();
++}
+diff --git a/vision_apps/platform/j722s/rtos/mcu2_0/main.c b/vision_apps/platform/j722s/rtos/mcu2_0/main.c
+index c55dea3..adab7dc 100755
+--- a/vision_apps/platform/j722s/rtos/mcu2_0/main.c
++++ b/vision_apps/platform/j722s/rtos/mcu2_0/main.c
+@@ -79,6 +79,7 @@
+ #include "ti_board_open_close.h"
+ #include <ipc_notify.h>
+ #include <ipc_notify/v0/ipc_notify_v0.h>
++#include "../ipc_trace.h"
+ 
+ #if defined(SAFERTOS)
+ extern void System_lateInit(void);
+@@ -97,14 +98,64 @@ void IpcNotify_getConfig(IpcNotify_InterruptConfig **interruptConfig, uint32_t *
+     *interruptConfigNum = gIpcNotifyInterruptConfigNum_main_r5fss0_0;
+ }
+ 
++
++/* OPENHD_EARLY_TRACE_BEGIN
++ *
++ * Markers are written into the final 4 KiB of the Linux-visible remoteproc
++ * trace buffer. Each marker gets a fixed 64-byte slot so a failure cannot
++ * corrupt earlier stage information.
++ */
++#define OPENHD_TRACE_REGION_SIZE   (0x1000U)
++#define OPENHD_TRACE_SLOT_SIZE     (64U)
++#define OPENHD_TRACE_BASE_OFFSET   \
++    (IPC_TRACE_BUFFER_MAX_SIZE - OPENHD_TRACE_REGION_SIZE)
++
++static void openhdTraceMark(unsigned int slot, const char *marker)
++{
++    volatile char *dst;
++    unsigned int offset;
++    unsigned int i;
++
++    offset = OPENHD_TRACE_BASE_OFFSET +
++             (slot * OPENHD_TRACE_SLOT_SIZE);
++
++    if (offset >= IPC_TRACE_BUFFER_MAX_SIZE)
++    {
++        return;
++    }
++
++    dst = (volatile char *)&Ipc_traceBuffer[offset];
++
++    for (i = 0U;
++         (i < (OPENHD_TRACE_SLOT_SIZE - 1U)) &&
++         (marker[i] != '\0');
++         i++)
++    {
++        dst[i] = marker[i];
++    }
++
++    dst[i] = '\0';
++
++    /* Compiler barrier: preserve marker writes at this exact stage. */
++    __asm__ volatile ("" : : : "memory");
++}
++/* OPENHD_EARLY_TRACE_END */
++
+ static void appMain(void* arg0, void* arg1)
+ {
++    openhdTraceMark(10U, "OHDBG A00 appMain entered");
+     appUtilsTaskInit();
+ 
++    openhdTraceMark(3U, "OHDBG M03 before Drivers_open");
+     Drivers_open();
++    openhdTraceMark(4U, "OHDBG M04 after Drivers_open");
++    openhdTraceMark(5U, "OHDBG M05 before Board_driversOpen");
+     Board_driversOpen();
++    openhdTraceMark(6U, "OHDBG M06 after Board_driversOpen");
+ 
++    openhdTraceMark(11U, "OHDBG A01 before appInit");
+     appInit();
++    openhdTraceMark(16U, "OHDBG A02 after appInit");
+     appRun();
+ 
+     #if 1
+@@ -138,6 +189,7 @@ __attribute__ ((aligned(8192)));
+ 
+ int main(void)
+ {
++    openhdTraceMark(0U, "OHDBG M00 main entered");
+     app_rtos_task_params_t tskParams;
+     app_rtos_task_handle_t task;
+ 
+@@ -156,8 +208,12 @@ int main(void)
+     /* This is for debug purpose - see the description of function header */
+     StartupEmulatorWaitFxn();
+ 
++    openhdTraceMark(1U, "OHDBG M01 before System_init");
+     System_init();
++    openhdTraceMark(2U, "OHDBG M02 after System_init");
++    openhdTraceMark(7U, "OHDBG M07 before Board_init");
+     Board_init();
++    openhdTraceMark(8U, "OHDBG M08 after Board_init");
+ 
+     #if defined(SAFERTOS)
+     System_lateInit();
+@@ -181,7 +237,9 @@ int main(void)
+     #if defined(SAFERTOS)
+     xTaskStartScheduler();
+     #else
++    openhdTraceMark(14U, "OHDBG M14 before scheduler");
+     vTaskStartScheduler();
++    openhdTraceMark(15U, "OHDBG M15 scheduler returned");
+     #endif
+ 
+     /* The following line should never be reached because vTaskStartScheduler()
