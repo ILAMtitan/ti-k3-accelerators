@@ -258,14 +258,17 @@ document records the remaining provenance work separately.
 
 ## Repository checks
 
-Run the static checks before publishing changes:
+Run the contract checks before publishing changes:
 
 ```bash
 bash tests/test-boundary.sh
 bash tests/test-contract.sh
 bash tests/test-sdk-inputs.sh
-sha256sum -c SHA256SUMS
 ```
+
+These tests protect ownership boundaries and locked external inputs. Git itself
+provides integrity/versioning for ordinary repository files, so the repository
+does not maintain a second whole-tree checksum manifest.
 
 ## OpenHD consumer
 
