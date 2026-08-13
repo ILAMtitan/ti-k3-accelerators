@@ -64,7 +64,7 @@ if [[ -n "${PYTHONUSERBASE:-}" ]]; then
     export PATH="$PYTHONUSERBASE/bin:$PATH"
 fi
 
-LOG_DIR="${J722S_R2_LOG_DIR:-$SDK_ROOT/.j722s-r1-build-logs}"
+LOG_DIR="${J722S_R2_LOG_DIR:-$SDK_ROOT/.j722s-r2-build-logs}"
 mkdir -p "$LOG_DIR"
 
 HLOS_GCC="$SDK_ROOT/toolchain/sysroots/x86_64-arago-linux/usr/bin/aarch64-oe-linux/aarch64-oe-linux-gcc"
