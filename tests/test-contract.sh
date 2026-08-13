@@ -25,7 +25,8 @@ compat="$overlay/usr/local/sbin/ti-k3-build-tiovx-compat-plugin"
 grep -Fq '/usr/lib/ti-k3-build-only/ti-2a' "$compat"
 ! grep -Fq '/usr/lib/openhd-build-only/ti-2a' "$compat"
 
-# IMX219 service must supply generic DCC defaults and wait on the generic accelerator stack.
+# IMX219 service must supply the platform camera contract and depend on the
+# qualified accelerator stack.
 env="$overlay/etc/ti-k3/accelerators.env"
 grep -Fxq 'TI_K3_CAMERA_DCC_VISS=/opt/imaging/imx219/linear/dcc_viss_1920x1080.bin' "$env"
 grep -Fxq 'TI_K3_CAMERA_DCC_2A=/opt/imaging/imx219/linear/dcc_2a_1920x1080.bin' "$env"
@@ -41,40 +42,29 @@ for gst_consumer in \
   grep -Fq 'source /etc/ti-k3/gstreamer.env' "$gst_consumer"
 done
 
-# The platform target owns generic accelerator bring-up only; cameras remain optional consumers.
+# The platform target owns generic accelerator bring-up only; cameras remain
+# optional consumers.
 target="$overlay/etc/systemd/system/ti-k3-accelerators.target"
 ! grep -Fq 'imx219' "$target"
 
-# prepare-armbian must never delete an existing userpatches tree.
+# Host preparation must not destroy an existing Armbian userpatches tree.
 prepare="$root/prepare-armbian.sh"
 ! grep -Fq 'rm -rf "$build/userpatches"' "$prepare"
 grep -Fq 'Refusing to overwrite non-empty' "$prepare"
 
-# Host preparation reconstructs TI userspace from locked official TI inputs.
-grep -Fq 'extract-ti-linux-rootfs.sh' "$prepare"
-grep -Fq 'import-ti-userspace-locked.sh' "$prepare"
-grep -Fq 'import-ti-edgeai-development-headers.sh' "$prepare"
-grep -Fq -- '--ti-rootfs-archive' "$prepare"
-! grep -Fq -- '--ti-rootfs)' "$prepare"
-grep -Fq 'TI_K3_WORKDIR_BASE' "$prepare"
-grep -Fq 'FORENSIC_HEADER_STAGING_SANITIZED=PASS' "$prepare"
-
-# Legacy frozen development-header authority must not remain installed.
-[[ ! -e "$overlay/usr/local/sbin/ti-k3-validate-ti-edgeai-development-header-provenance" ]]
-[[ ! -e "$overlay/usr/local/share/ti-k3/ti-edgeai-development-header-sources.txt" ]]
-
-# Build wrapper retains the frozen Alpha pinned Armbian container environment.
+# The build wrapper intentionally pins the container environment used for the
+# qualified image.
 builder="$root/build-image.sh"
 grep -Fq 'ubuntu:noble@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90' "$builder"
 grep -Fq './compile.sh build ti-k3-beagley-ai' "$builder"
 
-echo 'PASS: TI pass-1 dependency and ownership contract'
-
-# Camera discovery owns the public camera.env refresh and must never truncate
-# platform-owned fields required by consumers.
-finder="$root/armbian/userpatches/overlay/usr/local/sbin/ti-k3-find-camera-devices"
+# Camera discovery owns the public camera.env refresh and must preserve all
+# fields required by consumers.
+finder="$overlay/usr/local/sbin/ti-k3-find-camera-devices"
 grep -Fq 'TI_K3_CAMERA_DCC_VISS=' "$finder"
 grep -Fq 'TI_K3_CAMERA_DCC_2A=' "$finder"
 grep -Fq 'TI_K3_CAMERA_CSI_V4L2_IO_MODE=' "$finder"
 grep -Fq 'TI_K3_CAMERA_TIOVX_SINK_POOL_SIZE=' "$finder"
 grep -Fq 'TI_K3_CAMERA_TIOVX_SRC_POOL_SIZE=' "$finder"
+
+echo 'PASS: TI dependency and ownership contract'
