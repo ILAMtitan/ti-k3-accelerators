@@ -1,0 +1,16 @@
+cc33xx-fw
+cnm-wave-fw
+edgeai-gst-plugins
+edgeai-tiovx-kernels
+edgeai-tiovx-kernels-dev
+edgeai-tiovx-modules
+libedgeai-apps-utils0.1.0
+libedgeai-apps-utils-dev
+libti-rpmsg-char0
+libti-rpmsg-char-dev
+libtivision-apps11.2.0
+libtivision-apps-dev
+ti-tidl
+ti-tidl-dev
+wl18xx-fw
+wlconf

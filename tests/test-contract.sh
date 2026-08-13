@@ -50,12 +50,18 @@ prepare="$root/prepare-armbian.sh"
 ! grep -Fq 'rm -rf "$build/userpatches"' "$prepare"
 grep -Fq 'Refusing to overwrite non-empty' "$prepare"
 
-# Host preparation must filter the frozen TI target rootfs rather than copying it wholesale.
-importer="$root/scripts/import-ti-userspace.sh"
-grep -Fq 'import-ti-userspace.sh' "$prepare"
-! grep -Fq 'cp -a "$ti_rootfs/."' "$prepare"
-grep -Fq 'usr/bin/sudo$' "$importer"
-grep -Fq 'vx_app_rtos_linux_*.out' "$importer"
+# Host preparation reconstructs TI userspace from locked official TI inputs.
+grep -Fq 'extract-ti-linux-rootfs.sh' "$prepare"
+grep -Fq 'import-ti-userspace-locked.sh' "$prepare"
+grep -Fq 'import-ti-edgeai-development-headers.sh' "$prepare"
+grep -Fq -- '--ti-rootfs-archive' "$prepare"
+! grep -Fq -- '--ti-rootfs)' "$prepare"
+grep -Fq 'TI_K3_WORKDIR_BASE' "$prepare"
+grep -Fq 'FORENSIC_HEADER_STAGING_SANITIZED=PASS' "$prepare"
+
+# Legacy frozen development-header authority must not remain installed.
+[[ ! -e "$overlay/usr/local/sbin/ti-k3-validate-ti-edgeai-development-header-provenance" ]]
+[[ ! -e "$overlay/usr/local/share/ti-k3/ti-edgeai-development-header-sources.txt" ]]
 
 # Build wrapper retains the frozen Alpha pinned Armbian container environment.
 builder="$root/build-image.sh"

@@ -1,3 +1,0 @@
-ti-firmware-builder-targetfs-installed-prefix
-ti-firmware-builder-edgeai-installed-prefix
-ti-edgeai-app-stack-pinned-header-sources

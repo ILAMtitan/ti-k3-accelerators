@@ -48,6 +48,9 @@ rsync -a --keep-dirlinks \
   --exclude='/SOURCE-BUILD.env' --exclude='/SHA256SUMS' \
   --exclude='/FIRMWARE-MEMORY-MAP-VERIFICATION.json' --exclude='/FIRMWARE-CONTRACT-VERIFICATION.json' \
   --exclude='/FORENSIC-MCU2-POWER-CLOCK.patch' --exclude='/FORENSIC-MCU2-DRIVERS.patch' \
+  --exclude='/usr/include/***' \
+  --exclude='/usr/share/openhd/ti-edgeai-development-headers.env' \
+  --exclude='/usr/share/openhd/ti-edgeai-development-headers.sha256' \
   "$firmware_root/" /
 
 # Normalize historical R7.33.4.1 staging names into the generic TI K3 namespace.
@@ -59,14 +62,10 @@ if [[ -d /usr/lib/openhd-build-only/ti-2a ]]; then
   mv /usr/lib/openhd-build-only/ti-2a /usr/lib/ti-k3-build-only/ti-2a
 fi
 install -d -m 0755 /usr/share/ti-k3
-for item in \
-  ti-edgeai-development-headers.env \
-  ti-edgeai-development-headers.sha256 \
-  ti-2a-wrapper-provider.env; do
-  if [[ -f /usr/share/openhd/$item ]]; then
-    mv /usr/share/openhd/$item /usr/share/ti-k3/$item
-  fi
-done
+if [[ -f /usr/share/openhd/ti-2a-wrapper-provider.env ]]; then
+  mv /usr/share/openhd/ti-2a-wrapper-provider.env \
+    /usr/share/ti-k3/ti-2a-wrapper-provider.env
+fi
 rmdir /usr/share/openhd 2>/dev/null || true
 cat >/etc/ti-k3/vision-apps-firmware.sha256 <<EOF
 ${main_r5_sha256}  /usr/lib/firmware/vision_apps_evm/vx_app_rtos_linux_mcu2_0.out
