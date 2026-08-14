@@ -25,6 +25,17 @@ compat="$overlay/usr/local/sbin/ti-k3-build-tiovx-compat-plugin"
 grep -Fq '/usr/lib/ti-k3-build-only/ti-2a' "$compat"
 ! grep -Fq '/usr/lib/openhd-build-only/ti-2a' "$compat"
 
+# TI source-build provenance uses one canonical lowercase SoC identity from the
+# R2 manifest through the 2A producer and image consumer. A case mismatch here
+# previously rejected a valid source-built provider during image customization.
+firmware_manifest="$root/firmware/manifests/j722s-r2.env"
+ti_2a_builder="$root/scripts/build-ti-2a-provider-from-psdk.sh"
+customize="$root/armbian/userpatches/customize-image.sh"
+grep -Fxq 'SOC=j722s' "$firmware_manifest"
+grep -Fq 'soc=$SOC' "$ti_2a_builder"
+grep -Fq '[[ ${vendor:-} == Texas_Instruments && ${soc:-} == j722s ]]' "$customize"
+! grep -Fq '${soc:-} == J722S' "$customize"
+
 # IMX219 service must supply the platform camera contract and depend on the
 # qualified accelerator stack.
 env="$overlay/etc/ti-k3/accelerators.env"
