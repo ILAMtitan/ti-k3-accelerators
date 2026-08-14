@@ -14,9 +14,9 @@ in inputs/ti-linux-j722s-11.02.01.03.env is downloaded and SHA-256 verified.
 --ti-rtos-src must point to the matching J722S TI PSDK RTOS source tree.
 PSDK_TOOLS_PATH must name the TI compiler/SysConfig tools root.
 
-The R2 Main R5/C7x firmware cohort and TI 2A wrapper are built directly from
-that supplied PSDK RTOS source tree. No frozen firmware or 2A binary input is
-accepted by this preparation path.
+The application-neutral R2 Main R5/C7x firmware candidate and TI 2A wrapper are
+built directly from that supplied PSDK RTOS source tree. No frozen firmware or
+2A binary input is accepted by this preparation path.
 USAGE
     exit 2
 }
@@ -96,15 +96,34 @@ then
 fi
 
 mcu="$ti_rtos_src/vision_apps/platform/j722s/rtos/mcu2_0"
-if [[ ! -s "$mcu/generated/ti_drivers_config_openhd.c" ||
-      ! -s "$mcu/generated/ti_power_clock_config_openhd.c" ]] ||
-   ! grep -q 'generated/ti_drivers_config_openhd\.c' "$mcu/concerto_mcu2_0_inc.mak" 2>/dev/null ||
-   ! grep -q 'generated/ti_power_clock_config_openhd\.c' "$mcu/concerto_mcu2_0_inc.mak" 2>/dev/null
+inc="$mcu/concerto_mcu2_0_inc.mak"
+drivers_j722s="$mcu/generated/ti_drivers_config_j722s.c"
+power_j722s="$mcu/generated/ti_power_clock_config_j722s.c"
+drivers_historical="$mcu/generated/ti_drivers_config_openhd.c"
+power_historical="$mcu/generated/ti_power_clock_config_openhd.c"
+
+canonical_r2=no
+if [[ -s "$drivers_j722s" && -s "$power_j722s" ]] &&
+   grep -q 'generated/ti_drivers_config_j722s\.c' "$inc" 2>/dev/null &&
+   grep -q 'generated/ti_power_clock_config_j722s\.c' "$inc" 2>/dev/null
 then
-    echo 'TI_R2_SOURCE_STATE=APPLYING_RECONSTRUCTION'
-    bash "$firmware_apply" "$ti_rtos_src"
+    canonical_r2=yes
+fi
+
+if [[ "$canonical_r2" == yes ]]; then
+    echo 'TI_R2_SOURCE_STATE=ALREADY_RECONSTRUCTED_APPLICATION_NEUTRAL'
 else
-    echo 'TI_R2_SOURCE_STATE=ALREADY_RECONSTRUCTED'
+    if [[ -e "$drivers_historical" || -e "$power_historical" ]] ||
+       grep -q 'generated/ti_.*_config_openhd\.c' "$inc" 2>/dev/null ||
+       grep -q 'OHDBG' "$mcu/main.c" 2>/dev/null
+    then
+        echo 'ERROR: PSDK RTOS tree is still in the temporary historical OpenHD reproduction state.' >&2
+        echo 'Restore the canonical *_j722s.c / J7DBG reconstruction or use a fresh PSDK RTOS tree.' >&2
+        exit 1
+    fi
+
+    echo 'TI_R2_SOURCE_STATE=APPLYING_APPLICATION_NEUTRAL_RECONSTRUCTION'
+    bash "$firmware_apply" "$ti_rtos_src"
 fi
 
 work_base=${TI_K3_WORKDIR_BASE:-${TMPDIR:-/tmp}}
