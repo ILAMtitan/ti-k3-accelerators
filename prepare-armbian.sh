@@ -68,7 +68,7 @@ ti_2a_builder="$root/scripts/build-ti-2a-provider-from-psdk.sh"
     exit 1
 }
 
-[[ -x "$ti_2a_builder" ]] || {
+[[ -s "$ti_2a_builder" ]] || {
     echo "Missing TI 2A source builder: $ti_2a_builder" >&2
     exit 1
 }
@@ -145,7 +145,7 @@ trap cleanup EXIT
 
 ti_2a_source="$work/ti-2a-provider-source"
 
-"$ti_2a_builder" \
+bash "$ti_2a_builder" \
     "$ti_rtos_src" \
     "$ti_2a_source"
 
