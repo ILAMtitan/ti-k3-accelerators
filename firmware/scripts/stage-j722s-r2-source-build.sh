@@ -18,29 +18,43 @@ BUILD_SCRIPT="$SCRIPT_DIR/build-j722s-r2.sh"
 MANIFEST="$REPO_ROOT/firmware/manifests/j722s-r2.env"
 MCU="$SDK_ROOT/vision_apps/platform/j722s/rtos/mcu2_0"
 INC="$MCU/concerto_mcu2_0_inc.mak"
-DRIVERS="$MCU/generated/ti_drivers_config_openhd.c"
-POWER="$MCU/generated/ti_power_clock_config_openhd.c"
+DRIVERS="$MCU/generated/ti_drivers_config_j722s.c"
+POWER="$MCU/generated/ti_power_clock_config_j722s.c"
 MAIN="$MCU/main.c"
 
 for file in "$BUILD_SCRIPT" "$MANIFEST" "$INC" "$DRIVERS" "$POWER" "$MAIN"; do
     [[ -s "$file" ]] || { echo "ERROR: missing source-build input: $file" >&2; exit 1; }
 done
 
-grep -q 'generated/ti_drivers_config_openhd\.c' "$INC" || { echo 'ERROR: qualified R5 driver compiler basename is not active' >&2; exit 1; }
-grep -q 'generated/ti_power_clock_config_openhd\.c' "$INC" || { echo 'ERROR: qualified R5 power/clock compiler basename is not active' >&2; exit 1; }
+grep -q 'generated/ti_drivers_config_j722s\.c' "$INC" || {
+    echo 'ERROR: application-neutral J722S driver compiler basename is not active' >&2
+    exit 1
+}
 
-# The deployed/qualified load image contains 42 OHDBG markers. Four additional
-# F00-F03 source markers may remain J7DBG in an experiment tree because that
-# branch is compiled out by the R2 configuration. A clean reconstruction via
-# apply-j722s-r2.sh normalizes all markers to OHDBG.
-ohdbg_count=$(grep -ho 'OHDBG' "$MAIN" "$DRIVERS" "$POWER" | wc -l)
-[[ $ohdbg_count -ge 42 ]] || { echo "ERROR: expected at least 42 qualified OHDBG R5 markers, got $ohdbg_count" >&2; exit 1; }
+grep -q 'generated/ti_power_clock_config_j722s\.c' "$INC" || {
+    echo 'ERROR: application-neutral J722S power/clock compiler basename is not active' >&2
+    exit 1
+}
 
-unexpected_j7=$(
-    grep -h 'J7DBG' "$MAIN" "$DRIVERS" "$POWER" 2>/dev/null |
-    grep -Ev 'J7DBG F0[0-3] ' || true
-)
-[[ -z "$unexpected_j7" ]] || { echo 'ERROR: unexpected J7DBG marker remains in an active qualified R5 source path' >&2; printf '%s\n' "$unexpected_j7" >&2; exit 1; }
+if grep -q 'generated/ti_.*_config_openhd\.c' "$INC" ||
+   [[ -e "$MCU/generated/ti_drivers_config_openhd.c" ||
+      -e "$MCU/generated/ti_power_clock_config_openhd.c" ]]
+then
+    echo 'ERROR: historical OpenHD filename-reproduction state remains in the PSDK tree' >&2
+    echo 'Restore the canonical *_j722s.c source state before staging firmware.' >&2
+    exit 1
+fi
+
+j7_count=$(grep -ho 'J7DBG' "$MAIN" "$DRIVERS" "$POWER" | wc -l)
+[[ "$j7_count" -eq 46 ]] || {
+    echo "ERROR: expected 46 application-neutral J7DBG source markers, got $j7_count" >&2
+    exit 1
+}
+
+if grep -q 'OHDBG' "$MAIN" "$DRIVERS" "$POWER"; then
+    echo 'ERROR: historical OHDBG reproduction marker remains in the PSDK tree' >&2
+    exit 1
+fi
 
 bash "$BUILD_SCRIPT" "$SDK_ROOT"
 
@@ -72,8 +86,9 @@ c7x2_sha=$(sha256sum "$C7X2" | awk '{print $1}')
 source "$MANIFEST"
 
 cat >"$OUT/SOURCE-BUILD.env" <<EOF
-format=4
+format=5
 build_mode=ti-psdk-rtos-source-built-r2
+qualification_status=unqualified_source_candidate
 vendor=Texas_Instruments
 soc=j722s
 psdk_rtos_version=${PSDK_RTOS_VERSION}
@@ -81,11 +96,10 @@ mcu_plus_sdk_version=${MCU_PLUS_SDK_VERSION}
 cgt_armllvm_version=${CGT_ARMLLVM_VERSION}
 cgt_c7x_version=${CGT_C7X_VERSION}
 sysconfig_version=${SYSCONFIG_VERSION}
-memory_map_id=openhd-j722s-4gb-evm-matched-v2
-qualified_runtime_identity=j722s-r2-load-image-qualified-20260813
-qualified_r5_driver_basename=ti_drivers_config_openhd.c
-qualified_r5_power_clock_basename=ti_power_clock_config_openhd.c
-qualified_r5_trace_prefix=OHDBG
+memory_map_id=j722s-beagley-ai-4gb-r73341
+r5_driver_basename=ti_drivers_config_j722s.c
+r5_power_clock_basename=ti_power_clock_config_j722s.c
+r5_trace_prefix=J7DBG
 main_r5_sha256=${main_sha}
 c71_0_sha256=${c7x1_sha}
 c71_1_sha256=${c7x2_sha}
@@ -105,4 +119,5 @@ EOF
 echo "SOURCE_BUILT_MAIN_R5_SHA256=$main_sha"
 echo "SOURCE_BUILT_C7X1_SHA256=$c7x1_sha"
 echo "SOURCE_BUILT_C7X2_SHA256=$c7x2_sha"
+echo 'SOURCE_BUILT_FIRMWARE_QUALIFICATION_STATUS=unqualified_source_candidate'
 echo 'J722S_R2_SOURCE_FIRMWARE_STAGING=PASS'
