@@ -57,15 +57,22 @@ grep -q "Pixel Format.*'RGGB'" <<<"${capture_format}" || {
 }
 
 if [[ "${verify_stream}" == yes ]]; then
+  preflight=/run/ti-k3/imx219-raw-preflight.log
+  rm -f "$preflight"
+  preflight_rc=0
   timeout --foreground --kill-after=2 10 \
     v4l2-ctl -d "${video}" \
       --stream-mmap=4 \
       --stream-count=4 \
-      --stream-to=/dev/null >/run/ti-k3/imx219-raw-preflight.log 2>&1 || {
-        echo "IMX219 raw capture preflight failed" >&2
-        cat /run/ti-k3/imx219-raw-preflight.log >&2
-        exit 1
-      }
+      --stream-to=/dev/null >"$preflight" 2>&1 || preflight_rc=$?
+
+  if [[ "$preflight_rc" -ne 0 ]] ||
+     grep -Eqi 'VIDIOC_STREAMON returned -1|Broken pipe|streaming failed|failed to start streaming' "$preflight"
+  then
+    echo "IMX219 raw capture preflight failed" >&2
+    cat "$preflight" >&2
+    exit 1
+  fi
 fi
 
 printf 'Configured IMX219 graph: media=%s sensor=%s bridge=%s csi2rx=%s video=%s\n' \
