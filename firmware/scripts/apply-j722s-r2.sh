@@ -28,17 +28,10 @@ REPO_ROOT="$(
 
 PATCH_DIR="$REPO_ROOT/firmware/patches/j722s-r2"
 RTOS_ROOT="$SDK_ROOT/vision_apps/platform/j722s/rtos"
-IDENTITY_NORMALIZER="$SCRIPT_DIR/normalize-j722s-r2-qualified-identity.sh"
 
 if [[ ! -d "$RTOS_ROOT" ]]; then
     echo "ERROR: J722S Vision Apps RTOS tree not found:"
     echo "  $RTOS_ROOT"
-    exit 1
-fi
-
-if [[ ! -f "$IDENTITY_NORMALIZER" ]]; then
-    echo "ERROR: missing R5 identity normalizer:"
-    echo "  $IDENTITY_NORMALIZER"
     exit 1
 fi
 
@@ -80,23 +73,10 @@ do
 done
 
 echo
-echo '===== QUALIFIED R5 LOAD-IMAGE IDENTITY ====='
-bash "$IDENTITY_NORMALIZER" "$SDK_ROOT"
-
-echo
 echo '===== POST-APPLY PATCH STATE ====='
 
 for patch in "${PATCHES[@]}"
 do
-    # The identity normalization intentionally renames two generated source
-    # files and changes diagnostic strings after patch application, so only
-    # the unchanged portions of the source reconstruction remain directly
-    # reverse-checkable. Validate the final contract explicitly below instead.
-    if [[ "$(basename "$patch")" == "0002-main-r5-j722s.patch" ]]; then
-        echo "NORMALIZED $(basename "$patch")"
-        continue
-    fi
-
     git -C "$SDK_ROOT" apply \
         --reverse \
         --check \
@@ -110,8 +90,8 @@ echo
 echo '===== REQUIRED ADDED FILES ====='
 
 for file in \
-    "$RTOS_ROOT/mcu2_0/generated/ti_drivers_config_openhd.c" \
-    "$RTOS_ROOT/mcu2_0/generated/ti_power_clock_config_openhd.c"
+    "$RTOS_ROOT/mcu2_0/generated/ti_drivers_config_j722s.c" \
+    "$RTOS_ROOT/mcu2_0/generated/ti_power_clock_config_j722s.c"
 do
     if [[ -f "$file" ]]; then
         echo "PRESENT ${file#"$SDK_ROOT/"}"
@@ -121,14 +101,40 @@ do
     fi
 done
 
-if grep -q 'J7DBG' \
-    "$RTOS_ROOT/mcu2_0/main.c" \
-    "$RTOS_ROOT/mcu2_0/generated/ti_drivers_config_openhd.c" \
-    "$RTOS_ROOT/mcu2_0/generated/ti_power_clock_config_openhd.c"
-then
-    echo "ERROR: stale J7DBG marker remains in active R5 sources"
+INC="$RTOS_ROOT/mcu2_0/concerto_mcu2_0_inc.mak"
+MAIN="$RTOS_ROOT/mcu2_0/main.c"
+DRIVERS="$RTOS_ROOT/mcu2_0/generated/ti_drivers_config_j722s.c"
+POWER="$RTOS_ROOT/mcu2_0/generated/ti_power_clock_config_j722s.c"
+
+grep -q 'generated/ti_drivers_config_j722s\.c' "$INC" || {
+    echo "ERROR: J722S driver source is not the active compiler input" >&2
+    exit 1
+}
+
+grep -q 'generated/ti_power_clock_config_j722s\.c' "$INC" || {
+    echo "ERROR: J722S power/clock source is not the active compiler input" >&2
+    exit 1
+}
+
+if grep -q 'generated/ti_.*_config_openhd\.c' "$INC"; then
+    echo "ERROR: application-specific generated-source basename remains active" >&2
     exit 1
 fi
+
+j7_count=$(grep -ho 'J7DBG' "$MAIN" "$DRIVERS" "$POWER" | wc -l)
+[[ "$j7_count" -eq 46 ]] || {
+    echo "ERROR: expected 46 J7DBG source markers, got $j7_count" >&2
+    exit 1
+}
+
+if grep -q 'OHDBG' "$MAIN" "$DRIVERS" "$POWER"; then
+    echo "ERROR: historical OpenHD diagnostic marker remains in application-neutral R5 sources" >&2
+    exit 1
+fi
+
+echo "R5_DRIVER_BASENAME=ti_drivers_config_j722s.c"
+echo "R5_POWER_CLOCK_BASENAME=ti_power_clock_config_j722s.c"
+echo "R5_TRACE_PREFIX=J7DBG"
 
 echo
 echo '===== C7X NO-BOARD-DEPS SYMLINKS ====='
