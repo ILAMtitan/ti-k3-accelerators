@@ -36,21 +36,21 @@ rsync -a --keep-dirlinks --exclude='/.openhd-ti-vendor-bundle.env' --exclude='/.
 ldconfig
 
 # Main R5/C7x firmware reconstructed directly from the supplied TI PSDK RTOS
-# source tree. Whole-file ELF hashes are build provenance; the qualified runtime
-# contract is the PT_LOAD image identity established independently against the
-# frozen hardware-qualified R2 cohort.
+# source tree using the application-neutral J722S source identity. This cohort is
+# a new deployment candidate and must complete physical cold-boot accelerator
+# qualification before it can replace the frozen R2 hardware-qualified baseline.
 firmware_meta="$firmware_root/SOURCE-BUILD.env"
 [[ -s $firmware_meta ]] || { echo 'R2 firmware source-build provenance missing' >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$firmware_meta"
-[[ ${format:-} == 4 ]] || { echo 'Invalid R2 firmware source-build metadata format' >&2; exit 1; }
+[[ ${format:-} == 5 ]] || { echo 'Invalid R2 firmware source-build metadata format' >&2; exit 1; }
 [[ ${build_mode:-} == ti-psdk-rtos-source-built-r2 ]] || { echo 'R2 firmware was not built from TI PSDK RTOS source' >&2; exit 1; }
+[[ ${qualification_status:-} == unqualified_source_candidate ]] || { echo 'Unexpected R2 firmware qualification state' >&2; exit 1; }
 [[ ${vendor:-} == Texas_Instruments && ${soc:-} == j722s ]] || { echo 'Unexpected source-built firmware identity' >&2; exit 1; }
-[[ ${memory_map_id:-} == openhd-j722s-4gb-evm-matched-v2 ]] || { echo 'Unexpected J722S memory contract' >&2; exit 1; }
-[[ ${qualified_runtime_identity:-} == j722s-r2-load-image-qualified-20260813 ]] || { echo 'Unexpected R2 runtime identity contract' >&2; exit 1; }
-[[ ${qualified_r5_driver_basename:-} == ti_drivers_config_openhd.c ]] || { echo 'Unexpected qualified R5 driver basename' >&2; exit 1; }
-[[ ${qualified_r5_power_clock_basename:-} == ti_power_clock_config_openhd.c ]] || { echo 'Unexpected qualified R5 power/clock basename' >&2; exit 1; }
-[[ ${qualified_r5_trace_prefix:-} == OHDBG ]] || { echo 'Unexpected qualified R5 trace prefix' >&2; exit 1; }
+[[ ${memory_map_id:-} == j722s-beagley-ai-4gb-r73341 ]] || { echo 'Unexpected J722S memory contract' >&2; exit 1; }
+[[ ${r5_driver_basename:-} == ti_drivers_config_j722s.c ]] || { echo 'Unexpected R5 driver basename' >&2; exit 1; }
+[[ ${r5_power_clock_basename:-} == ti_power_clock_config_j722s.c ]] || { echo 'Unexpected R5 power/clock basename' >&2; exit 1; }
+[[ ${r5_trace_prefix:-} == J7DBG ]] || { echo 'Unexpected R5 trace prefix' >&2; exit 1; }
 [[ ${main_r5_sha256:-} =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid Main R5 source-build SHA-256' >&2; exit 1; }
 [[ ${c71_0_sha256:-} =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid C7x-1 source-build SHA-256' >&2; exit 1; }
 [[ ${c71_1_sha256:-} =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid C7x-2 source-build SHA-256' >&2; exit 1; }
@@ -58,7 +58,7 @@ source "$firmware_meta"
 fw_main_sha=$main_r5_sha256
 fw_c7x1_sha=$c71_0_sha256
 fw_c7x2_sha=$c71_1_sha256
-fw_runtime_identity=$qualified_runtime_identity
+fw_qualification_status=$qualification_status
 
 for pair in \
   "vx_app_rtos_linux_mcu2_0.out:$fw_main_sha" \
@@ -127,16 +127,17 @@ for dcc in /opt/imaging/imx219/linear/dcc_viss_1920x1080.bin /opt/imaging/imx219
 rm -rf /usr/lib/ti-k3-build-only /usr/lib/openhd-build-only
 ldconfig
 
-# Persist platform identity.
+# Persist platform identity. The source-built firmware remains explicitly
+# unqualified until the generated image passes the physical hardware gates.
 cat >/var/lib/ti-k3/platform.env <<EOF
 format=2
 soc=j722s
 board=beagley-ai
 memory_profile=j722s-beagley-ai-4gb-r73341
 ti_release=11.02.01.03
-firmware_contract=source-built-r2-load-image-equivalent-to-qualified-r2
+firmware_contract=source-built-r2-application-neutral-candidate
 firmware_source_build=yes
-firmware_runtime_identity=${fw_runtime_identity}
+firmware_qualification_status=${fw_qualification_status}
 main_r5_sha256=${fw_main_sha}
 c7x_1_sha256=${fw_c7x1_sha}
 c7x_2_sha256=${fw_c7x2_sha}
