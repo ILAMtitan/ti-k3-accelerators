@@ -53,6 +53,16 @@ for gst_consumer in \
   grep -Fq 'source /etc/ti-k3/gstreamer.env' "$gst_consumer"
 done
 
+# Camera qualification must configure the full media graph before every stream
+# test and must reject V4L2 STREAMON errors even when v4l2-ctl exits zero.
+camera_test="$overlay/usr/local/sbin/ti-k3-test-imx219"
+camera_graph="$overlay/usr/local/sbin/ti-k3-configure-imx219-graph"
+grep -Fq '/usr/local/sbin/ti-k3-configure-imx219-graph --verify-stream' "$camera_test"
+grep -Fq 'VIDIOC_STREAMON returned -1' "$camera_test"
+grep -Fq 'Broken pipe' "$camera_test"
+grep -Fq 'VIDIOC_STREAMON returned -1' "$camera_graph"
+grep -Fq 'Broken pipe' "$camera_graph"
+
 # The platform target owns generic accelerator bring-up only; cameras remain
 # optional consumers.
 target="$overlay/etc/systemd/system/ti-k3-accelerators.target"
