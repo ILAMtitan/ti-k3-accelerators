@@ -27,6 +27,12 @@ common=(v4l2src device="$video" io-mode="$io_mode" num-buffers=300 '!' \
   "sink_0::dcc-2a-file=$dcc_2a" "sink_0::device=$subdev" \
   "sink_0::pool-size=$sink_pool" "src::pool-size=$src_pool" '!' \
   video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 '!')
+
+prepare_graph()
+{
+  /usr/local/sbin/ti-k3-configure-imx219-graph --verify-stream
+}
+
 case "$mode" in
   detect)
     echo "video=$video"; echo "subdev=$subdev"
@@ -34,16 +40,29 @@ case "$mode" in
     v4l2-ctl -d "$subdev" -D
     ;;
   raw)
-    exec v4l2-ctl -d "$video" --stream-mmap=4 --stream-count=300 --stream-to=/dev/null
+    prepare_graph
+    raw_log=$(mktemp /tmp/ti-k3-imx219-raw.XXXXXX)
+    trap 'rm -f "$raw_log"' EXIT
+    raw_rc=0
+    v4l2-ctl -d "$video" --stream-mmap=4 --stream-count=300 --stream-to=/dev/null >"$raw_log" 2>&1 || raw_rc=$?
+    cat "$raw_log"
+    if [[ "$raw_rc" -ne 0 ]] ||
+       grep -Eqi 'VIDIOC_STREAMON returned -1|Broken pipe|streaming failed|failed to start streaming' "$raw_log"
+    then
+      echo "IMX219 raw capture failed" >&2
+      exit 1
+    fi
     ;;
   isp)
     /usr/local/sbin/ti-k3-rpmsg-ready --wait "${TI_K3_RPMSG_READY_TIMEOUT_SECONDS:-10}"
     [[ -s "$dcc_viss" && -s "$dcc_2a" ]] || { echo "IMX219 DCC assets missing" >&2; exit 1; }
+    prepare_graph
     exec gst-launch-1.0 -e -v "${common[@]}" fakesink sync=false
     ;;
   encode)
     /usr/local/sbin/ti-k3-rpmsg-ready --wait "${TI_K3_RPMSG_READY_TIMEOUT_SECONDS:-10}"
     [[ -s "$dcc_viss" && -s "$dcc_2a" ]] || { echo "IMX219 DCC assets missing" >&2; exit 1; }
+    prepare_graph
     exec gst-launch-1.0 -e -v "${common[@]}" \
       tiovxmultiscaler target=0 '!' video/x-raw,format=NV12,width=1280,height=720 '!' \
       queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream '!' \
