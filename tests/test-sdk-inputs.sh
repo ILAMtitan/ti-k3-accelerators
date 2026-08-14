@@ -10,7 +10,10 @@ package_lock="$root/inputs/ti-j722s-11.02.01.03-userspace-packages.lock"
 header_manifest="$root/inputs/ti-edgeai-development-headers.env"
 header_lock="$root/inputs/ti-edgeai-development-headers.lock"
 firmware_manifest="$root/firmware/manifests/j722s-r2.env"
+firmware_apply="$root/firmware/scripts/apply-j722s-r2.sh"
+firmware_normalizer="$root/firmware/scripts/normalize-j722s-r2-qualified-identity.sh"
 firmware_builder="$root/firmware/scripts/build-j722s-r2.sh"
+firmware_stage="$root/firmware/scripts/stage-j722s-r2-source-build.sh"
 ti_2a_builder="$root/scripts/build-ti-2a-provider-from-psdk.sh"
 ti_2a_compat="$root/armbian/userpatches/overlay/usr/local/sbin/ti-k3-build-tiovx-compat-plugin"
 
@@ -27,7 +30,10 @@ for f in \
     "$header_manifest" \
     "$header_lock" \
     "$firmware_manifest" \
+    "$firmware_apply" \
+    "$firmware_normalizer" \
     "$firmware_builder" \
+    "$firmware_stage" \
     "$ti_2a_builder" \
     "$ti_2a_compat" \
     "$extractor" \
@@ -42,37 +48,24 @@ do
     }
 done
 
-#
 # Official TI PSDK Linux release input.
-#
 # shellcheck source=/dev/null
 source "$linux_manifest"
-
 [[ "${format:-}" == 1 ]]
 [[ "${vendor:-}" == Texas_Instruments ]]
 [[ "${release:-}" == 11.02.01.03 ]]
 [[ "${machine:-}" == j722s-evm ]]
 [[ "${image_target:-}" == tisdk-adas-image ]]
 [[ "${rootfs_archive:-}" == tisdk-adas-image-j722s-evm.tar.xz ]]
-[[ "${rootfs_archive_sha256:-}" == \
-   01b8e762db99673108b423e8dcb1e5f2c00bdba17359dcd00600b49db030ded4 ]]
+[[ "${rootfs_archive_sha256:-}" == 01b8e762db99673108b423e8dcb1e5f2c00bdba17359dcd00600b49db030ded4 ]]
 [[ "${archive_strip_components:-}" == 0 ]]
 
-#
 # Qualified TI package/object lock.
-#
 objects=$(awk 'END {print NR}' "$file_lock")
 packages=$(awk 'NF {n++} END {print n+0}' "$package_lock")
-
 [[ "$objects" == 511 ]]
 [[ "$packages" == 16 ]]
-
-awk -F '\t' '
-    NF != 3 { bad=1 }
-    $1 == "" || $2 !~ /^\// || $3 == "" { bad=1 }
-    END { exit bad }
-' "$file_lock"
-
+awk -F '\t' 'NF != 3 { bad=1 } $1 == "" || $2 !~ /^\// || $3 == "" { bad=1 } END { exit bad }' "$file_lock"
 [[ -z "$(cut -f2 "$file_lock" | sort | uniq -d)" ]]
 
 expected_packages=$(
@@ -95,122 +88,90 @@ wl18xx-fw
 wlconf
 PACKAGES
 )
-
-actual_packages=$(
-    awk 'NF {print $1}' "$package_lock" |
-    sort
-)
-
+actual_packages=$(awk 'NF {print $1}' "$package_lock" | sort)
 [[ "$actual_packages" == "$expected_packages" ]]
 
-#
 # TI-source EdgeAI compatibility-header overlay.
-#
 unset format vendor release
-
 # shellcheck source=/dev/null
 source "$header_manifest"
-
 [[ "${format:-}" == 1 ]]
 [[ "${vendor:-}" == Texas_Instruments ]]
 [[ "${release:-}" == 11.02.01.03 ]]
 [[ "${header_count:-}" == 32 ]]
-
-[[ "${edgeai_tiovx_modules_commit:-}" == \
-   16ea980baf1b9c6549bd5cc33aa94ea9c351eb01 ]]
-
-[[ "${edgeai_tiovx_kernels_commit:-}" == \
-   b41bef631fcf037e8cb8b754d9db0d42d9ce3210 ]]
-
-[[ "${edgeai_apps_utils_commit:-}" == \
-   5a5a694ae02f0d2e4e39028b847e1c777c465cbf ]]
+[[ "${edgeai_tiovx_modules_commit:-}" == 16ea980baf1b9c6549bd5cc33aa94ea9c351eb01 ]]
+[[ "${edgeai_tiovx_kernels_commit:-}" == b41bef631fcf037e8cb8b754d9db0d42d9ce3210 ]]
+[[ "${edgeai_apps_utils_commit:-}" == 5a5a694ae02f0d2e4e39028b847e1c777c465cbf ]]
 
 headers=$(awk 'END {print NR}' "$header_lock")
-
-apps=$(
-    awk -F '\t' \
-        '$1=="edgeai-apps-utils"{n++} END{print n+0}' \
-        "$header_lock"
-)
-
-kernels=$(
-    awk -F '\t' \
-        '$1=="edgeai-tiovx-kernels"{n++} END{print n+0}' \
-        "$header_lock"
-)
-
-modules=$(
-    awk -F '\t' \
-        '$1=="edgeai-tiovx-modules"{n++} END{print n+0}' \
-        "$header_lock"
-)
-
+apps=$(awk -F '\t' '$1=="edgeai-apps-utils"{n++} END{print n+0}' "$header_lock")
+kernels=$(awk -F '\t' '$1=="edgeai-tiovx-kernels"{n++} END{print n+0}' "$header_lock")
+modules=$(awk -F '\t' '$1=="edgeai-tiovx-modules"{n++} END{print n+0}' "$header_lock")
 [[ "$headers" == 32 ]]
 [[ "$apps" == 9 ]]
 [[ "$kernels" == 7 ]]
 [[ "$modules" == 16 ]]
-
-awk -F '\t' '
-    NF != 3 { bad=1 }
-    $1 == "" || $2 !~ /^\/usr\/include\// { bad=1 }
-    $3 !~ /^[0-9a-f]{64}$/ { bad=1 }
-    END { exit bad }
-' "$header_lock"
-
+awk -F '\t' 'NF != 3 { bad=1 } $1 == "" || $2 !~ /^\/usr\/include\// { bad=1 } $3 !~ /^[0-9a-f]{64}$/ { bad=1 } END { exit bad }' "$header_lock"
 [[ -z "$(cut -f2 "$header_lock" | sort | uniq -d)" ]]
 
-#
-# Preparation must consume locked/public SDK inputs rather than caller-provided
-# extracted userspace or a historical TI 2A binary provider.
-#
+# Preparation consumes only official/locked source and release inputs.
 grep -Fq 'extract-ti-linux-rootfs.sh' "$prepare"
 grep -Fq 'import-ti-userspace-locked.sh' "$prepare"
 grep -Fq 'import-ti-edgeai-development-headers.sh' "$prepare"
 grep -Fq 'build-ti-2a-provider-from-psdk.sh' "$prepare"
-
+grep -Fq 'stage-j722s-r2-source-build.sh' "$prepare"
+grep -Fq 'apply-j722s-r2.sh' "$prepare"
 grep -Fq -- '--ti-rootfs-archive' "$prepare"
 grep -Fq -- '--ti-rtos-src' "$prepare"
-! grep -Fq -- '--ti-rootfs)' "$prepare"
-
+! grep -Fq -- '--firmware DIR' "$prepare"
+grep -Fq -- '--firmware)' "$prepare"
+grep -Fq 'R2 firmware is reconstructed from --ti-rtos-src' "$prepare"
 grep -Fq 'TI_K3_WORKDIR_BASE' "$prepare"
-grep -Fq 'FORENSIC_HEADER_STAGING_SANITIZED=PASS' "$prepare"
-grep -Fq 'FORENSIC_TI_2A_STAGING_SANITIZED=PASS' "$prepare"
+grep -Fq 'firmware-source-build' "$prepare"
+grep -Fq 'SOURCE_FIRMWARE_STAGING_BOUNDARY=PASS' "$prepare"
 grep -Fq 'ti-2a-provider-source' "$prepare"
+! grep -Fq 'forensic-firmware' "$prepare"
+! grep -Fq 'QUALIFIED_FIRMWARE_INPUT=PASS' "$prepare"
+! grep -Fq '214ee24d51bd8f3166cd930b2ed01f058fe5268bc93c4fdbb43feb551f9a753c' "$prepare"
 
-#
-# The historical 32-header copy is not authoritative anymore.
-#
-[[ ! -e \
-    "$root/armbian/userpatches/overlay/usr/local/sbin/ti-k3-validate-ti-edgeai-development-header-provenance" ]]
+# Historical header/provider artifacts are not active build inputs.
+[[ ! -e "$root/armbian/userpatches/overlay/usr/local/sbin/ti-k3-validate-ti-edgeai-development-header-provenance" ]]
+[[ ! -e "$root/armbian/userpatches/overlay/usr/local/share/ti-k3/ti-edgeai-development-header-sources.txt" ]]
+! grep -Fq 'forensic-firmware' "$customize"
+! grep -Fq 'FORENSIC-MCU2-' "$customize"
+! grep -Fq 'FIRMWARE-MEMORY-MAP-VERIFICATION.json' "$customize"
+! grep -Fq 'FIRMWARE-CONTRACT-VERIFICATION.json' "$customize"
 
-[[ ! -e \
-    "$root/armbian/userpatches/overlay/usr/local/share/ti-k3/ti-edgeai-development-header-sources.txt" ]]
-
-grep -Fq "exclude='/usr/include/***'" "$customize"
-grep -Fq \
-    "exclude='/usr/share/openhd/ti-edgeai-development-headers.env'" \
-    "$customize"
-grep -Fq \
-    "exclude='/usr/share/openhd/ti-edgeai-development-headers.sha256'" \
-    "$customize"
-
-#
-# The R2 source-build lane must accept a caller-supplied SDK root. A developer's
-# absolute checkout path is not an input contract. Binary identity across two
-# checkout locations remains a dynamic qualification measurement.
-#
+# R2 source reconstruction is checkout-location independent and preserves the
+# compiler-visible identifiers required for the qualified Main R5 load image.
 ! grep -Fq 'CANONICAL_BUILD_ROOT=' "$firmware_manifest"
 ! grep -Fq '/home/bart/' "$firmware_manifest"
 ! grep -Fq 'CANONICAL_BUILD_ROOT' "$firmware_builder"
 grep -Fq 'BUILD_LINUX_MPU=yes' "$firmware_manifest"
 grep -Fq '"BUILD_LINUX_MPU=$BUILD_LINUX_MPU"' "$firmware_builder"
 grep -Fq 'SDK_ROOT_POLICY=caller-supplied' "$firmware_builder"
+grep -Fq 'normalize-j722s-r2-qualified-identity.sh' "$firmware_apply"
+grep -Fq 'ti_drivers_config_openhd.c' "$firmware_normalizer"
+grep -Fq 'ti_power_clock_config_openhd.c' "$firmware_normalizer"
+grep -Fq "sed -i 's/J7DBG/OHDBG/g'" "$firmware_normalizer"
+grep -Fq 'J722S_R2_QUALIFIED_IDENTITY_NORMALIZATION=PASS' "$firmware_normalizer"
 
-#
-# The TI 2A provider must be built from the supplied PSDK RTOS imaging source,
-# staged separately from the frozen firmware bundle, and consumed from exactly
-# that build-only directory by the TIOVX compatibility build.
-#
+# Source-built firmware staging contains only build outputs and provenance and
+# is the firmware input consumed by image customization.
+grep -Fq 'ti-psdk-rtos-source-built-r2' "$firmware_stage"
+grep -Fq 'qualified_runtime_identity=j722s-r2-load-image-qualified-20260813' "$firmware_stage"
+grep -Fq 'j722s-main-r5f0_0-fw' "$firmware_stage"
+grep -Fq 'j722s-c71_0-fw' "$firmware_stage"
+grep -Fq 'j722s-c71_1-fw' "$firmware_stage"
+grep -Fq 'J722S_R2_SOURCE_FIRMWARE_STAGING=PASS' "$firmware_stage"
+grep -Fq 'firmware-source-build' "$customize"
+grep -Fq 'ti-psdk-rtos-source-built-r2' "$customize"
+grep -Fq 'firmware_source_build=yes' "$customize"
+grep -Fq 'source-built-r2-load-image-equivalent-to-qualified-r2' "$customize"
+! grep -Fq 'forensic-july29-baseline' "$customize"
+! grep -Fq '214ee24d51bd8f3166cd930b2ed01f058fe5268bc93c4fdbb43feb551f9a753c' "$customize"
+
+# TI 2A provider is source-built and consumed only from its explicit build-only path.
 grep -Fq 'imaging/ti_2a_wrapper' "$ti_2a_builder"
 grep -Fq 'BUILD_LINUX_MPU=yes' "$ti_2a_builder"
 grep -Fq 'TI_2A_wrapper_create' "$ti_2a_builder"
@@ -218,13 +179,11 @@ grep -Fq 'TI_2A_wrapper_process' "$ti_2a_builder"
 grep -Fq 'TI_2A_wrapper_delete' "$ti_2a_builder"
 ! grep -Fq 'reference/r73341' "$ti_2a_builder"
 ! grep -Fq '4f7b2acf81511fc0dabf7f61b88b7a7574d153cab435c178b238ecc689e6c567' "$ti_2a_builder"
-
 grep -Fq 'ti-2a-provider-source' "$customize"
 grep -Fq 'ti-2a-wrapper-source-build.env' "$customize"
 grep -Fq 'ti_2a_source_build=yes' "$customize"
 ! grep -Fq 'mv /usr/lib/openhd-build-only/ti-2a' "$customize"
-
 grep -Fq 'TI_2A_SOURCE_DIR=/usr/lib/ti-k3-build-only/ti-2a' "$ti_2a_compat"
 grep -Fq 'TI_2A_PROVIDER=$("$ti_2a_helper" "$TI_2A_LINK_DIR" "$TI_2A_SOURCE_DIR")' "$ti_2a_compat"
 
-echo 'PASS: TI SDK source-input, firmware-source, 2A-source, and development-header contract'
+echo 'PASS: TI SDK zero-frozen firmware/2A source-input and development-header contract'
