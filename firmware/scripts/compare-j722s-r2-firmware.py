@@ -94,10 +94,7 @@ class Elf:
             self.sections = []
             return
         _, typ, _, _, off, size = raw[self.shstrndx]
-        if typ == SHT_NOBITS:
-            names = b""
-        else:
-            names = self.data[off:off + size]
+        names = b"" if typ == SHT_NOBITS else self.data[off:off + size]
 
         def secname(idx):
             if idx >= len(names):
@@ -132,6 +129,8 @@ def compare_one(reference: Path, candidate: Path):
     a = Elf(reference)
     b = Elf(candidate)
     print(f"===== {reference.name} =====")
+    print(f"reference_path={reference}")
+    print(f"candidate_path={candidate}")
     print(f"reference_sha256={sha256(a.data)}")
     print(f"candidate_sha256={sha256(b.data)}")
     print(f"elf_class_reference={a.bits}")
@@ -197,10 +196,16 @@ def compare_one(reference: Path, candidate: Path):
 
 
 def resolve(root: Path, name: str) -> Path:
+    psdk_rel = (
+        Path("vision_apps/out/J722S/R5F/FREERTOS/release")
+        if name == "vx_app_rtos_linux_mcu2_0.out"
+        else Path("vision_apps/out/J722S/C7524/FREERTOS/release")
+    )
     candidates = [
         root / name,
         root / "usr/lib/firmware/vision_apps_evm" / name,
         root / "vision_apps_evm" / name,
+        root / psdk_rel / name,
     ]
     for p in candidates:
         if p.is_file():
