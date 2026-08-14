@@ -11,9 +11,9 @@ header_manifest="$root/inputs/ti-edgeai-development-headers.env"
 header_lock="$root/inputs/ti-edgeai-development-headers.lock"
 firmware_manifest="$root/firmware/manifests/j722s-r2.env"
 firmware_apply="$root/firmware/scripts/apply-j722s-r2.sh"
-firmware_normalizer="$root/firmware/scripts/normalize-j722s-r2-qualified-identity.sh"
 firmware_builder="$root/firmware/scripts/build-j722s-r2.sh"
 firmware_stage="$root/firmware/scripts/stage-j722s-r2-source-build.sh"
+firmware_patch="$root/firmware/patches/j722s-r2/0002-main-r5-j722s.patch"
 ti_2a_builder="$root/scripts/build-ti-2a-provider-from-psdk.sh"
 ti_2a_compat="$root/armbian/userpatches/overlay/usr/local/sbin/ti-k3-build-tiovx-compat-plugin"
 
@@ -31,9 +31,9 @@ for f in \
     "$header_lock" \
     "$firmware_manifest" \
     "$firmware_apply" \
-    "$firmware_normalizer" \
     "$firmware_builder" \
     "$firmware_stage" \
+    "$firmware_patch" \
     "$ti_2a_builder" \
     "$ti_2a_compat" \
     "$extractor" \
@@ -47,6 +47,8 @@ do
         exit 1
     }
 done
+
+[[ ! -e "$root/firmware/scripts/normalize-j722s-r2-qualified-identity.sh" ]]
 
 # Official TI PSDK Linux release input.
 # shellcheck source=/dev/null
@@ -133,6 +135,8 @@ grep -Fq 'ti-2a-provider-source' "$prepare"
 ! grep -Fq 'forensic-firmware' "$prepare"
 ! grep -Fq 'QUALIFIED_FIRMWARE_INPUT=PASS' "$prepare"
 ! grep -Fq '214ee24d51bd8f3166cd930b2ed01f058fe5268bc93c4fdbb43feb551f9a753c' "$prepare"
+grep -Fq 'ALREADY_RECONSTRUCTED_APPLICATION_NEUTRAL' "$prepare"
+grep -Fq 'temporary historical OpenHD reproduction state' "$prepare"
 
 # Historical header/provider artifacts are not active build inputs.
 [[ ! -e "$root/armbian/userpatches/overlay/usr/local/sbin/ti-k3-validate-ti-edgeai-development-header-provenance" ]]
@@ -142,32 +146,45 @@ grep -Fq 'ti-2a-provider-source' "$prepare"
 ! grep -Fq 'FIRMWARE-MEMORY-MAP-VERIFICATION.json' "$customize"
 ! grep -Fq 'FIRMWARE-CONTRACT-VERIFICATION.json' "$customize"
 
-# R2 source reconstruction is checkout-location independent and preserves the
-# compiler-visible identifiers required for the qualified Main R5 load image.
+# Permanent R2 source reconstruction is application-neutral. The temporary
+# historical-name reproduction experiment is evidence only and must never be
+# invoked by the active build path.
 ! grep -Fq 'CANONICAL_BUILD_ROOT=' "$firmware_manifest"
 ! grep -Fq '/home/bart/' "$firmware_manifest"
 ! grep -Fq 'CANONICAL_BUILD_ROOT' "$firmware_builder"
 grep -Fq 'BUILD_LINUX_MPU=yes' "$firmware_manifest"
 grep -Fq '"BUILD_LINUX_MPU=$BUILD_LINUX_MPU"' "$firmware_builder"
 grep -Fq 'SDK_ROOT_POLICY=caller-supplied' "$firmware_builder"
-grep -Fq 'normalize-j722s-r2-qualified-identity.sh' "$firmware_apply"
-grep -Fq 'ti_drivers_config_openhd.c' "$firmware_normalizer"
-grep -Fq 'ti_power_clock_config_openhd.c' "$firmware_normalizer"
-grep -Fq "sed -i 's/J7DBG/OHDBG/g'" "$firmware_normalizer"
-grep -Fq 'J722S_R2_QUALIFIED_IDENTITY_NORMALIZATION=PASS' "$firmware_normalizer"
+grep -Fq 'ti_drivers_config_j722s.c' "$firmware_apply"
+grep -Fq 'ti_power_clock_config_j722s.c' "$firmware_apply"
+grep -Fq 'R5_TRACE_PREFIX=J7DBG' "$firmware_apply"
+! grep -Fq 'normalize-j722s-r2-qualified-identity.sh' "$firmware_apply"
+! grep -Fq 'ti_drivers_config_openhd.c' "$firmware_patch"
+! grep -Fq 'ti_power_clock_config_openhd.c' "$firmware_patch"
 
-# Source-built firmware staging contains only build outputs and provenance and
-# is the firmware input consumed by image customization.
+# Source-built firmware staging contains only the new application-neutral
+# candidate, its hashes, and provenance. It must remain explicitly unqualified
+# until the physical BeagleY-AI qualification gates pass.
 grep -Fq 'ti-psdk-rtos-source-built-r2' "$firmware_stage"
-grep -Fq 'qualified_runtime_identity=j722s-r2-load-image-qualified-20260813' "$firmware_stage"
+grep -Fq 'qualification_status=unqualified_source_candidate' "$firmware_stage"
+grep -Fq 'memory_map_id=j722s-beagley-ai-4gb-r73341' "$firmware_stage"
+grep -Fq 'r5_driver_basename=ti_drivers_config_j722s.c' "$firmware_stage"
+grep -Fq 'r5_power_clock_basename=ti_power_clock_config_j722s.c' "$firmware_stage"
+grep -Fq 'r5_trace_prefix=J7DBG' "$firmware_stage"
+! grep -Fq 'qualified_runtime_identity=' "$firmware_stage"
 grep -Fq 'j722s-main-r5f0_0-fw' "$firmware_stage"
 grep -Fq 'j722s-c71_0-fw' "$firmware_stage"
 grep -Fq 'j722s-c71_1-fw' "$firmware_stage"
 grep -Fq 'J722S_R2_SOURCE_FIRMWARE_STAGING=PASS' "$firmware_stage"
 grep -Fq 'firmware-source-build' "$customize"
 grep -Fq 'ti-psdk-rtos-source-built-r2' "$customize"
+grep -Fq 'unqualified_source_candidate' "$customize"
 grep -Fq 'firmware_source_build=yes' "$customize"
-grep -Fq 'source-built-r2-load-image-equivalent-to-qualified-r2' "$customize"
+grep -Fq 'source-built-r2-application-neutral-candidate' "$customize"
+! grep -Fq 'source-built-r2-load-image-equivalent-to-qualified-r2' "$customize"
+! grep -Fq 'qualified_r5_driver_basename' "$customize"
+! grep -Fq 'qualified_r5_power_clock_basename' "$customize"
+! grep -Fq 'qualified_r5_trace_prefix' "$customize"
 ! grep -Fq 'forensic-july29-baseline' "$customize"
 ! grep -Fq '214ee24d51bd8f3166cd930b2ed01f058fe5268bc93c4fdbb43feb551f9a753c' "$customize"
 
@@ -186,4 +203,4 @@ grep -Fq 'ti_2a_source_build=yes' "$customize"
 grep -Fq 'TI_2A_SOURCE_DIR=/usr/lib/ti-k3-build-only/ti-2a' "$ti_2a_compat"
 grep -Fq 'TI_2A_PROVIDER=$("$ti_2a_helper" "$TI_2A_LINK_DIR" "$TI_2A_SOURCE_DIR")' "$ti_2a_compat"
 
-echo 'PASS: TI SDK zero-frozen firmware/2A source-input and development-header contract'
+echo 'PASS: TI SDK application-neutral zero-frozen firmware/2A source-input contract'
