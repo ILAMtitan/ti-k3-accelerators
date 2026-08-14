@@ -9,6 +9,7 @@ BUILD_DIR=${TI_K3_TIOVX_COMPAT_BUILD_DIR:-/tmp/ti-k3-edgeai-gst-plugins-r12.0.16
 OUTPUT_DIR=/opt/ti-k3/tiovx-compat-plugin
 EDGEAI_LINK_DIR=${BUILD_DIR}.ti-edgeai-link
 TI_2A_LINK_DIR=${BUILD_DIR}.ti-2a-link
+TI_2A_SOURCE_DIR=/usr/lib/ti-k3-build-only/ti-2a
 JOBS=${TI_K3_IMAGE_BUILD_JOBS:-$(nproc)}
 
 [[ $JOBS =~ ^[1-9][0-9]*$ ]] || { echo "Invalid build job count: $JOBS" >&2; exit 2; }
@@ -24,6 +25,7 @@ for header_dir in \
   /usr/include/edgeai-apps-utils; do
   [[ -d $header_dir ]] || { echo "Missing imported TI development headers: $header_dir" >&2; exit 1; }
 done
+[[ -d $TI_2A_SOURCE_DIR ]] || { echo "Missing staged source-built TI 2A provider: $TI_2A_SOURCE_DIR" >&2; exit 1; }
 
 rm -rf "$SOURCE_DIR" "$BUILD_DIR" "$OUTPUT_DIR" "$EDGEAI_LINK_DIR" "$TI_2A_LINK_DIR"
 git init -q "$SOURCE_DIR"
@@ -37,7 +39,7 @@ edgeai_helper=/usr/local/sbin/ti-k3-prepare-ti-edgeai-linker-interface
 ti_2a_helper=/usr/local/sbin/ti-k3-prepare-ti-2a-linker-provider
 [[ -x $edgeai_helper && -x $ti_2a_helper ]] || { echo "Missing TI linker-interface helper" >&2; exit 1; }
 "$edgeai_helper" "$EDGEAI_LINK_DIR" /lib /usr/lib /usr/local/lib
-TI_2A_PROVIDER=$("$ti_2a_helper" "$TI_2A_LINK_DIR" /usr/lib/ti-k3-build-only/ti-2a /lib /usr/lib /usr/local/lib)
+TI_2A_PROVIDER=$("$ti_2a_helper" "$TI_2A_LINK_DIR" "$TI_2A_SOURCE_DIR")
 [[ -s $TI_2A_PROVIDER ]] || { echo "TI 2A wrapper provider interface was not created" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$TI_2A_LINK_DIR/TI-2A-LINKER-PROVIDER.env"
