@@ -9,6 +9,9 @@ file_lock="$root/inputs/ti-j722s-11.02.01.03-userspace-files.lock"
 package_lock="$root/inputs/ti-j722s-11.02.01.03-userspace-packages.lock"
 header_manifest="$root/inputs/ti-edgeai-development-headers.env"
 header_lock="$root/inputs/ti-edgeai-development-headers.lock"
+firmware_manifest="$root/firmware/manifests/j722s-r2.env"
+firmware_builder="$root/firmware/scripts/build-j722s-r2.sh"
+ti_2a_builder="$root/scripts/build-ti-2a-provider-from-psdk.sh"
 
 extractor="$root/scripts/extract-ti-linux-rootfs.sh"
 userspace_importer="$root/scripts/import-ti-userspace-locked.sh"
@@ -22,6 +25,9 @@ for f in \
     "$package_lock" \
     "$header_manifest" \
     "$header_lock" \
+    "$firmware_manifest" \
+    "$firmware_builder" \
+    "$ti_2a_builder" \
     "$extractor" \
     "$userspace_importer" \
     "$header_importer" \
@@ -183,9 +189,31 @@ grep -Fq \
     "$customize"
 
 #
-# The 2A provider remains intentionally separate until its own provenance
-# hardening step.
+# The R2 source-build lane must accept a caller-supplied SDK root. A developer's
+# absolute checkout path is not an input contract. Binary identity across two
+# checkout locations remains a dynamic qualification measurement.
 #
+! grep -Fq 'CANONICAL_BUILD_ROOT=' "$firmware_manifest"
+! grep -Fq '/home/bart/' "$firmware_manifest"
+! grep -Fq 'CANONICAL_BUILD_ROOT' "$firmware_builder"
+grep -Fq 'BUILD_LINUX_MPU=yes' "$firmware_manifest"
+grep -Fq '"BUILD_LINUX_MPU=$BUILD_LINUX_MPU"' "$firmware_builder"
+grep -Fq 'SDK_ROOT_POLICY=caller-supplied' "$firmware_builder"
+
+#
+# A source-built TI 2A replacement lane now exists. Until that output is proven
+# and integrated, image customization still accepts the historical provider.
+# The new builder itself must not consume the historical reference tree or the
+# frozen provider hash.
+#
+grep -Fq 'imaging/ti_2a_wrapper' "$ti_2a_builder"
+grep -Fq 'BUILD_LINUX_MPU=yes' "$ti_2a_builder"
+grep -Fq 'TI_2A_wrapper_create' "$ti_2a_builder"
+grep -Fq 'TI_2A_wrapper_process' "$ti_2a_builder"
+grep -Fq 'TI_2A_wrapper_delete' "$ti_2a_builder"
+! grep -Fq 'reference/r73341' "$ti_2a_builder"
+! grep -Fq '4f7b2acf81511fc0dabf7f61b88b7a7574d153cab435c178b238ecc689e6c567' "$ti_2a_builder"
+
 grep -Fq 'ti-2a-wrapper-provider.env' "$customize"
 
-echo 'PASS: TI SDK source-input and development-header contract'
+echo 'PASS: TI SDK source-input, firmware-source, 2A-source, and development-header contract'
