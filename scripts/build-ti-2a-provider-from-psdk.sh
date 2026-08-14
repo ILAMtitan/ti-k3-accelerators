@@ -22,6 +22,22 @@ USAGE
 
 [[ $# -eq 2 ]] || usage
 
+[[ -n "$1" ]] || {
+    echo "TI_PSDK_RTOS_ROOT is empty" >&2
+    echo "Pass the PSDK RTOS source root as argument 1." >&2
+    exit 2
+}
+
+[[ -d "$1" ]] || {
+    echo "TI_PSDK_RTOS_ROOT is not a directory: $1" >&2
+    exit 2
+}
+
+[[ -n "$2" ]] || {
+    echo "OUTPUT_DIR is empty" >&2
+    exit 2
+}
+
 SDK_ROOT=$(cd "$1" && pwd)
 OUTPUT_DIR=$(readlink -m "$2")
 
