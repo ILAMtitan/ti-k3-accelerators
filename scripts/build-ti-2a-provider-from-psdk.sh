@@ -12,7 +12,7 @@ Required environment:
   PSDK_TOOLS_PATH    TI compiler/SysConfig tools used by the PSDK RTOS build
 
 This builds the J722S imaging target from the supplied TI PSDK RTOS source tree,
-then stages an AArch64 library built from that imaging tree which defines:
+then stages an AArch64 library freshly built from that imaging tree which defines:
   TI_2A_wrapper_create
   TI_2A_wrapper_process
   TI_2A_wrapper_delete
@@ -98,6 +98,11 @@ echo "PSDK_TOOLS_PATH=$PSDK_TOOLS_PATH"
 echo "SOURCE_COMPONENT=imaging/ti_2a_wrapper"
 echo
 
+build_stamp=$(mktemp)
+trap 'rm -f "$build_stamp"' EXIT
+
+touch "$build_stamp"
+
 make -B \
     -C "$SDK_BUILDER" \
     "${COMMON[@]}" \
@@ -115,6 +120,7 @@ symbols=(
 mapfile -t candidates < <(
     find -L "$IMAGING_ROOT" -type f \
         \( -name '*.a' -o -name '*.so' -o -name '*.so.*' \) \
+        -newer "$build_stamp" \
         -print 2>/dev/null |
     sort -u
 )
@@ -153,8 +159,8 @@ do
 done
 
 (( ${#providers[@]} > 0 )) || {
-    echo "No AArch64 source-built TI 2A provider was found under imaging/." >&2
-    echo "The imaging target completed, but no library defined all required symbols." >&2
+    echo "No freshly built AArch64 TI 2A provider was found under imaging/." >&2
+    echo "The imaging target completed, but no refreshed library defined all required symbols." >&2
     echo "Inspect imaging/ti_2a_wrapper and the imaging build logs before changing the image build." >&2
     exit 1
 }
@@ -177,10 +183,12 @@ case "$selected" in
     *.a)
         provider_kind=static
         output_name=libti_2a_wrapper.a
+        output_mode=0644
         ;;
     *)
         provider_kind=shared
         output_name=libti_2a_wrapper.so
+        output_mode=0755
         ;;
 esac
 
@@ -192,7 +200,7 @@ selected_relpath=${selected#"$SDK_ROOT/"}
 
 rm -rf "$OUTPUT_DIR"
 install -d -m 0755 "$OUTPUT_DIR"
-install -m 0644 "$selected" "$OUTPUT_DIR/$output_name"
+install -m "$output_mode" "$selected" "$OUTPUT_DIR/$output_name"
 
 cat >"$OUTPUT_DIR/SOURCE-BUILD.env" <<META
 format=1
