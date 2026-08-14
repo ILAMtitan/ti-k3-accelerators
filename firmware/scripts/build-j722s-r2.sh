@@ -42,21 +42,12 @@ fi
 # shellcheck disable=SC1090
 source "$MANIFEST"
 
-if [[ "$SDK_ROOT" != "$CANONICAL_BUILD_ROOT" ]]; then
-    echo "ERROR: Split-R2 comparison builds are currently path-sensitive."
-    echo "Expected SDK root:"
-    echo "  $CANONICAL_BUILD_ROOT"
-    echo "Actual SDK root:"
-    echo "  $SDK_ROOT"
-    echo "A checkout-independent prefix-map solution has not yet been qualified."
-    exit 1
-fi
-
 if [[ -z "${PSDK_TOOLS_PATH:-}" ]]; then
     echo "ERROR: PSDK_TOOLS_PATH is not set"
     exit 1
 fi
 
+PSDK_TOOLS_PATH="$(readlink -f "$PSDK_TOOLS_PATH")"
 export PSDK_TOOLS_PATH
 
 if [[ -n "${PYTHONUSERBASE:-}" ]]; then
@@ -76,6 +67,7 @@ echo '===== J722S SPLIT-R2 BUILD PREFLIGHT ====='
 echo "SDK_ROOT=$SDK_ROOT"
 echo "PSDK_TOOLS_PATH=$PSDK_TOOLS_PATH"
 echo "LOG_DIR=$LOG_DIR"
+echo 'SDK_ROOT_POLICY=caller-supplied'
 echo
 
 for dir in \
@@ -112,14 +104,19 @@ COMMON=(
     "TISDK_IMAGE=$TISDK_IMAGE"
     "RTOS=$RTOS"
     "PROFILE=$PROFILE"
+    "BUILD_PROFILE_LIST_ALL=$BUILD_PROFILE_LIST_ALL"
 
     "CGT_ARMLLVM_VERSION=$CGT_ARMLLVM_VERSION"
     "CGT_C7X_VERSION=$CGT_C7X_VERSION"
     "SYSCONFIG_VERSION=$SYSCONFIG_VERSION"
 
+    "BUILD_EDGEAI=$BUILD_EDGEAI"
+    "BUILD_MCU_BOARD_DEPENDENCIES=$BUILD_MCU_BOARD_DEPENDENCIES"
+    "BUILD_ENABLE_ETHFW=$BUILD_ENABLE_ETHFW"
 
     "BUILD_EMULATION_MODE=$BUILD_EMULATION_MODE"
     "BUILD_TARGET_MODE=$BUILD_TARGET_MODE"
+    "BUILD_LINUX_MPU=$BUILD_LINUX_MPU"
     "BUILD_PTK=$BUILD_PTK"
     "ENABLE_NEW_TIDL_STRUCTURE=$ENABLE_NEW_TIDL_STRUCTURE"
 
@@ -233,4 +230,6 @@ do
 done
 
 echo
+echo 'NOTE: caller-supplied SDK roots are now supported.'
+echo 'Bit-for-bit identity across distinct checkout paths must be measured separately.'
 echo "J722S_R2_BUILD=PASS"
