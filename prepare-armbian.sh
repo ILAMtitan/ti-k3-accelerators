@@ -6,21 +6,34 @@ usage()
 {
     cat >&2 <<USAGE
 Usage:
-  $0 [--ti-rootfs-archive FILE] --firmware DIR /path/to/Armbian/build
+  $0 [--ti-rootfs-archive FILE] --ti-rtos-src DIR --firmware DIR /path/to/Armbian/build
 
 If --ti-rootfs-archive is omitted, the exact TI PSDK Linux archive recorded
 in inputs/ti-linux-j722s-11.02.01.03.env is downloaded and SHA-256 verified.
+
+--ti-rtos-src must point to the matching J722S TI PSDK RTOS source tree.
+PSDK_TOOLS_PATH must name the TI compiler/SysConfig tools root used to build
+an AArch64 TI 2A wrapper provider directly from imaging/ti_2a_wrapper.
+
+--firmware remains the frozen hardware-qualified R2 firmware input for this
+transition stage. It will be replaced by the source-built R2 firmware lane
+once that firmware cohort is independently qualified.
 USAGE
     exit 2
 }
 
 ti_archive=
+ti_rtos_src=
 firmware=
 
 while (($#)); do
     case "$1" in
         --ti-rootfs-archive)
             ti_archive=${2:?}
+            shift 2
+            ;;
+        --ti-rtos-src)
+            ti_rtos_src=${2:?}
             shift 2
             ;;
         --firmware)
@@ -36,16 +49,32 @@ while (($#)); do
     esac
 done
 
-[[ $# -eq 1 && -n "$firmware" ]] || usage
+[[ $# -eq 1 && -n "$firmware" && -n "$ti_rtos_src" ]] || usage
+[[ -n ${PSDK_TOOLS_PATH:-} ]] || {
+    echo "PSDK_TOOLS_PATH is required when --ti-rtos-src is used" >&2
+    exit 1
+}
 
 root=$(cd "$(dirname "$0")" && pwd)
 build=$(readlink -f "$1")
 firmware=$(readlink -f "$firmware")
+ti_rtos_src=$(readlink -f "$ti_rtos_src")
 
 linux_manifest="$root/inputs/ti-linux-j722s-11.02.01.03.env"
+ti_2a_builder="$root/scripts/build-ti-2a-provider-from-psdk.sh"
 
 [[ -s "$linux_manifest" ]] || {
     echo "Missing TI Linux release manifest" >&2
+    exit 1
+}
+
+[[ -x "$ti_2a_builder" ]] || {
+    echo "Missing TI 2A source builder: $ti_2a_builder" >&2
+    exit 1
+}
+
+[[ -d "$ti_rtos_src/sdk_builder" && -d "$ti_rtos_src/imaging/ti_2a_wrapper" ]] || {
+    echo "Invalid TI PSDK RTOS source tree: $ti_rtos_src" >&2
     exit 1
 }
 
@@ -113,6 +142,19 @@ cleanup()
     rm -rf "$work"
 }
 trap cleanup EXIT
+
+ti_2a_source="$work/ti-2a-provider-source"
+
+"$ti_2a_builder" \
+    "$ti_rtos_src" \
+    "$ti_2a_source"
+
+[[ -s "$ti_2a_source/SOURCE-BUILD.env" ]] || {
+    echo "TI 2A source build did not produce provenance metadata" >&2
+    exit 1
+}
+
+echo 'TI_2A_SOURCE_INPUT=PASS'
 
 if [[ -n "$ti_archive" ]]; then
     ti_archive=$(readlink -f "$ti_archive")
@@ -183,8 +225,9 @@ cp -a "$root/armbian/userpatches/." "$build/userpatches/"
 
 asset_dst="$build/userpatches/overlay/opt/ti-k3-port/ti-assets-rootfs"
 firmware_dst="$build/userpatches/overlay/opt/ti-k3-port/forensic-firmware"
+ti_2a_dst="$build/userpatches/overlay/opt/ti-k3-port/ti-2a-provider-source"
 
-mkdir -p "$asset_dst" "$firmware_dst"
+mkdir -p "$asset_dst" "$firmware_dst" "$ti_2a_dst"
 
 "$root/scripts/import-ti-userspace-locked.sh" \
     "$rootfs" \
@@ -194,6 +237,7 @@ mkdir -p "$asset_dst" "$firmware_dst"
     "$asset_dst"
 
 cp -a "$firmware/." "$firmware_dst/"
+cp -a "$ti_2a_source/." "$ti_2a_dst/"
 
 #
 # The historical forensic firmware bundle carried a 32-header EdgeAI
@@ -202,7 +246,9 @@ cp -a "$firmware/." "$firmware_dst/"
 #
 rm -rf "$firmware_dst/usr/include"
 
-rm -f     "$firmware_dst/usr/share/openhd/ti-edgeai-development-headers.env"     "$firmware_dst/usr/share/openhd/ti-edgeai-development-headers.sha256"
+rm -f \
+    "$firmware_dst/usr/share/openhd/ti-edgeai-development-headers.env" \
+    "$firmware_dst/usr/share/openhd/ti-edgeai-development-headers.sha256"
 
 if [[ -e "$firmware_dst/usr/include" ]]; then
     echo "Forensic firmware staging still contains development headers" >&2
@@ -216,6 +262,30 @@ if [[ -e "$firmware_dst/usr/share/openhd/ti-edgeai-development-headers.env" ||
 fi
 
 echo 'FORENSIC_HEADER_STAGING_SANITIZED=PASS'
+
+#
+# The TI 2A wrapper is now reconstructed from the PSDK RTOS imaging source.
+# Remove every historical build-only copy from the frozen firmware staging so
+# the Armbian customization can only consume the source-built provider above.
+#
+rm -rf \
+    "$firmware_dst/usr/lib/openhd-build-only/ti-2a" \
+    "$firmware_dst/usr/lib/ti-k3-build-only/ti-2a"
+
+rm -f \
+    "$firmware_dst/usr/share/openhd/ti-2a-wrapper-provider.env" \
+    "$firmware_dst/usr/share/ti-k3/ti-2a-wrapper-provider.env" \
+    "$firmware_dst/usr/share/ti-k3/ti-2a-wrapper-source-build.env"
+
+if find "$firmware_dst" \( -type f -o -type l \) \
+    \( -name 'libti_2a_wrapper.a' -o -name 'libti_2a_wrapper.so' -o -name 'libti_2a_wrapper.so.*' \) \
+    -print -quit | grep -q .
+then
+    echo "Forensic firmware staging still contains a TI 2A wrapper provider" >&2
+    exit 1
+fi
+
+echo 'FORENSIC_TI_2A_STAGING_SANITIZED=PASS'
 echo 'TI_K3_ARMBIAN_INPUT_PREPARATION=PASS'
 echo "Prepared TI K3 accelerator userpatches in $build/userpatches"
 echo "Build: cd $build && ./compile.sh build ti-k3-beagley-ai"
