@@ -82,14 +82,15 @@ rsync -a --keep-dirlinks \
 
 # TI 2A wrapper provider reconstructed from the supplied PSDK RTOS imaging
 # source. This is deliberately staged into a build-only directory and is the
-# only location searched by the TIOVX compatibility build.
+# only location searched by the TIOVX compatibility build. SoC identifiers in
+# source-build metadata use the same lowercase canonical form as the R2 manifest.
 ti_2a_meta="$ti_2a_source_root/SOURCE-BUILD.env"
 [[ -s $ti_2a_meta ]] || { echo 'TI 2A source-build provenance missing' >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$ti_2a_meta"
 [[ ${format:-} == 1 ]] || { echo 'Invalid TI 2A source-build metadata format' >&2; exit 1; }
 [[ ${build_mode:-} == ti-psdk-rtos-source-built-2a-provider ]] || { echo 'TI 2A provider is not source-built from PSDK RTOS' >&2; exit 1; }
-[[ ${vendor:-} == Texas_Instruments && ${soc:-} == J722S ]] || { echo 'Unexpected TI 2A source-build identity' >&2; exit 1; }
+[[ ${vendor:-} == Texas_Instruments && ${soc:-} == j722s ]] || { echo 'Unexpected TI 2A source-build identity' >&2; exit 1; }
 [[ ${provider_kind:-} == static || ${provider_kind:-} == shared ]] || { echo 'Invalid TI 2A provider kind' >&2; exit 1; }
 [[ ${provider_filename:-} == libti_2a_wrapper.a || ${provider_filename:-} == libti_2a_wrapper.so ]] || { echo 'Unexpected TI 2A provider filename' >&2; exit 1; }
 [[ ${provider_sha256:-} =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid TI 2A provider SHA-256 provenance' >&2; exit 1; }
