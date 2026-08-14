@@ -1,0 +1,5 @@
+# Physical orientation for the portrait-native 720x1280 panel.
+# right produces a 1280x720 landscape desktop.
+WAVESHARE_ROTATION=right
+WAVESHARE_DSI_OUTPUT=DSI-1
+WAVESHARE_TOUCH_NAME="Waveshare GT911 Polling Touchscreen"

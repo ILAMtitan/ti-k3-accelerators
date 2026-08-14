@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/* Waveshare 5-DSI-TOUCH-A on BeagleY-AI, continuous-clock profile. */
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include "k3-pinctrl.h"
+
+&{/} {
+	dsi_csi_mux: mux-controller {
+		compatible = "gpio-mux";
+		#mux-state-cells = <1>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&dsi_csi_mux_pins_default>;
+		mux-gpios = <&main_gpio0 2 GPIO_ACTIVE_HIGH>,
+			    <&main_gpio0 1 GPIO_ACTIVE_HIGH>;
+		/* state = SEL + 2*OE: 0 = DSI0, 1 = CSI1, 2/3 = off */
+		idle-state = <0>;
+	};
+};
+
+&main_pmx0 {
+	dsi_csi_mux_pins_default: dsi-csi-mux-default-pins {
+		pinctrl-single,pins = <
+			J722S_IOPAD(0x0004, PIN_OUTPUT, 7) /* OSPI0_LBCLKO.GPIO0_1 */
+			J722S_IOPAD(0x0008, PIN_OUTPUT, 7) /* OSPI0_DQS.GPIO0_2 */
+		>;
+	};
+};
+
+&main_gpio0 { status = "okay"; };
+
+&main_i2c0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&main_i2c0_pins_default>;
+	clock-frequency = <400000>;
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	display_mcu: display-controller@45 {
+		compatible = "waveshare,touchscreen-panel-regulator";
+		reg = <0x45>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		enable-gpios = <&display_mcu 2 GPIO_ACTIVE_HIGH>;
+	};
+
+	touchscreen@5d {
+		compatible = "waveshare,gt911-poll";
+		reg = <0x5d>;
+		reset-gpios = <&display_mcu 9 GPIO_ACTIVE_HIGH>;
+		touchscreen-size-x = <720>;
+		touchscreen-size-y = <1280>;
+		poll-interval-ms = <16>;
+	};
+};
+
+&dphy_tx0 { status = "okay"; };
+&dss1 { status = "okay"; };
+
+&dss1_ports {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	port@1 {
+		reg = <1>;
+		ws5_dss_out: endpoint { remote-endpoint = <&ws5_dsi_in>; };
+	};
+};
+
+&dsi0 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		port@0 {
+			reg = <0>;
+			ws5_dsi_out: endpoint { remote-endpoint = <&ws5_panel_in>; };
+		};
+		port@1 {
+			reg = <1>;
+			ws5_dsi_in: endpoint { remote-endpoint = <&ws5_dss_out>; };
+		};
+	};
+	panel@0 {
+		compatible = "waveshare,5.0-dsi-touch-a";
+		reg = <0>;
+		reset-gpios = <&display_mcu 1 GPIO_ACTIVE_HIGH>;
+		iovcc-gpios = <&display_mcu 4 GPIO_ACTIVE_HIGH>;
+		avdd-gpios = <&display_mcu 0 GPIO_ACTIVE_HIGH>;
+		backlight = <&display_mcu>;
+		rotation = <0>;
+		waveshare,video-sync-pulse;
+		waveshare,continuous-clock;
+		port {
+			ws5_panel_in: endpoint { remote-endpoint = <&ws5_dsi_out>; };
+		};
+	};
+};

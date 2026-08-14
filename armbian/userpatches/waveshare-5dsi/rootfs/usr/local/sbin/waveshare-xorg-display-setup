@@ -1,0 +1,48 @@
+#!/bin/sh
+set -eu
+
+[ ! -r /etc/default/waveshare-5dsi ] || . /etc/default/waveshare-5dsi
+rotation="${WAVESHARE_ROTATION:-right}"
+requested_output="${WAVESHARE_DSI_OUTPUT:-DSI-1}"
+touch_name="${WAVESHARE_TOUCH_NAME:-Waveshare GT911 Polling Touchscreen}"
+case "$rotation" in
+    right) touch_matrix="0 1 0 -1 0 1 0 0 1" ;;
+    left) touch_matrix="0 -1 1 1 0 0 0 0 1" ;;
+    inverted) touch_matrix="-1 0 1 0 -1 1 0 0 1" ;;
+    normal) touch_matrix="1 0 0 0 1 0 0 0 1" ;;
+    *) echo "Invalid WAVESHARE_ROTATION: $rotation" >&2; exit 1 ;;
+esac
+
+output=""
+attempt=0
+while [ "$attempt" -lt 100 ]; do
+    if xrandr --query 2>/dev/null | grep -q "^${requested_output} connected"; then
+        output="$requested_output"
+        break
+    fi
+    output="$(xrandr --query 2>/dev/null | awk '/^DSI-[0-9]+ connected/{print $1; exit}')"
+    [ -z "$output" ] || break
+    attempt=$((attempt + 1))
+    sleep 0.1
+done
+[ -n "$output" ] || { echo 'No connected XRandR DSI output was found' >&2; exit 1; }
+xrandr --output "$output" --mode 720x1280 --rotate "$rotation" --primary
+
+touch_id=""
+attempt=0
+while [ "$attempt" -lt 100 ]; do
+    touch_id="$(xinput list --id-only "$touch_name" 2>/dev/null | head -n 1 || true)"
+    [ -z "$touch_id" ] || break
+    attempt=$((attempt + 1))
+    sleep 0.1
+done
+[ -n "$touch_id" ] || { echo "Touchscreen did not appear in Xorg: $touch_name" >&2; exit 0; }
+props="$(xinput list-props "$touch_id" 2>/dev/null || true)"
+if printf '%s\n' "$props" | grep -q 'Coordinate Transformation Matrix'; then
+    xinput set-prop "$touch_id" 'Coordinate Transformation Matrix' 1 0 0 0 1 0 0 0 1
+fi
+if printf '%s\n' "$props" | grep -q 'libinput Calibration Matrix'; then
+    xinput set-prop "$touch_id" 'libinput Calibration Matrix' $touch_matrix
+elif printf '%s\n' "$props" | grep -q 'Coordinate Transformation Matrix'; then
+    xinput set-prop "$touch_id" 'Coordinate Transformation Matrix' $touch_matrix
+fi

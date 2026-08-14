@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -eu
+
+modules="waveshare_panel_regulator cdns_dphy cdns_dsi panel_waveshare_5_dsi_touch_a tidss waveshare_gt911_poll"
+for module in $modules; do
+    modprobe "$module"
+done
+
+attempt=0
+while [ "$attempt" -lt 200 ]; do
+    for connector in /sys/class/drm/card*-DSI-*; do
+        [ -f "$connector/status" ] || continue
+        if [ "$(cat "$connector/status")" = connected ]; then
+            echo "Waveshare display ready at $connector"
+            exit 0
+        fi
+    done
+    attempt=$((attempt + 1))
+    sleep 0.1
+done
+
+echo 'Timed out waiting for a connected DSI connector' >&2
+exit 1

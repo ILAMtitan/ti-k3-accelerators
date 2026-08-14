@@ -1,0 +1,86 @@
+diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
+--- a/drivers/gpu/drm/panel/Kconfig
++++ b/drivers/gpu/drm/panel/Kconfig
+@@ -8,5 +8,16 @@ config DRM_PANEL
+ menu "Display Panels"
+ 	depends on DRM && DRM_PANEL
+ 
++config DRM_PANEL_WAVESHARE_5_DSI_TOUCH_A
++	tristate "Waveshare 5-DSI-TOUCH-A panel"
++	default m
++	depends on OF
++	depends on DRM_MIPI_DSI
++	depends on GPIOLIB
++	depends on BACKLIGHT_CLASS_DEVICE
++	help
++	  Enable the 720x1280 HX8394 MIPI-DSI panel used by the
++	  Waveshare 5-DSI-TOUCH-A display.
++
+ config DRM_PANEL_ABT_Y030XX067A
+ 	tristate "ABT Y030XX067A 320x480 LCD panel"
+diff --git a/drivers/gpu/drm/panel/Makefile b/drivers/gpu/drm/panel/Makefile
+--- a/drivers/gpu/drm/panel/Makefile
++++ b/drivers/gpu/drm/panel/Makefile
+@@ -1 +1,2 @@
+ obj-$(CONFIG_DRM_PANEL_HIMAX_HX8394) += panel-himax-hx8394.o
++obj-$(CONFIG_DRM_PANEL_WAVESHARE_5_DSI_TOUCH_A) += panel-waveshare-5-dsi-touch-a.o
+diff --git a/drivers/input/touchscreen/Kconfig b/drivers/input/touchscreen/Kconfig
+--- a/drivers/input/touchscreen/Kconfig
++++ b/drivers/input/touchscreen/Kconfig
+@@ -12,5 +12,13 @@ menuconfig INPUT_TOUCHSCREEN
+ 
+ if INPUT_TOUCHSCREEN
+ 
++config TOUCHSCREEN_WAVESHARE_GT911_POLL
++	tristate "Waveshare GT911 polling touchscreen"
++	default m
++	depends on I2C
++	help
++	  Enable polling support for the GT911-class controller on Waveshare
++	  DSI panels whose interrupt signal is not connected to the host.
++
+ config TOUCHSCREEN_88PM860X
+ 	tristate "Marvell 88PM860x touchscreen"
+diff --git a/drivers/input/touchscreen/Makefile b/drivers/input/touchscreen/Makefile
+--- a/drivers/input/touchscreen/Makefile
++++ b/drivers/input/touchscreen/Makefile
+@@ -1 +1,2 @@
+ obj-$(CONFIG_TOUCHSCREEN_GOODIX)	+= goodix_ts.o
++obj-$(CONFIG_TOUCHSCREEN_WAVESHARE_GT911_POLL) += waveshare-gt911-poll.o
+diff --git a/drivers/regulator/Kconfig b/drivers/regulator/Kconfig
+--- a/drivers/regulator/Kconfig
++++ b/drivers/regulator/Kconfig
+@@ -7,5 +7,15 @@ menuconfig REGULATOR
+ 
+ if REGULATOR
+ 
++config WAVESHARE_PANEL_MCU
++	tristate "Waveshare DSI panel MCU"
++	default m
++	depends on I2C && GPIOLIB
++	select REGMAP_I2C
++	depends on BACKLIGHT_CLASS_DEVICE
++	help
++	  Enable the I2C MCU used by Waveshare DSI displays for panel power,
++	  GPIO expansion, and backlight brightness control.
++
+ config REGULATOR_DEBUG
+ 	bool "Regulator debug support"
+diff --git a/drivers/regulator/Makefile b/drivers/regulator/Makefile
+--- a/drivers/regulator/Makefile
++++ b/drivers/regulator/Makefile
+@@ -1 +1,2 @@
+ obj-$(CONFIG_REGULATOR_RASPBERRYPI_TOUCHSCREEN_ATTINY)  += rpi-panel-attiny-regulator.o
++obj-$(CONFIG_WAVESHARE_PANEL_MCU) += waveshare-panel-regulator.o
+diff --git a/arch/arm64/boot/dts/ti/Makefile b/arch/arm64/boot/dts/ti/Makefile
+--- a/arch/arm64/boot/dts/ti/Makefile
++++ b/arch/arm64/boot/dts/ti/Makefile
+@@ -212,3 +212,9 @@ dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai.dtb
+ dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai-csi0-imx219.dtbo
+ dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai-csi1-imx219.dtbo
++k3-am67a-beagley-ai-waveshare-5dsi-continuous-dtbs := \
++	k3-am67a-beagley-ai.dtb \
++	k3-am67a-beagley-ai-waveshare-5dsi-continuous.dtbo
++dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai-waveshare-5dsi-continuous.dtbo
++dtb-$(CONFIG_ARCH_K3) += k3-am67a-beagley-ai-waveshare-5dsi-continuous.dtb
+ dtb-$(CONFIG_ARCH_K3) += k3-j722s-evm.dtb

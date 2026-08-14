@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepare Waveshare 5-DSI display
+After=systemd-modules-load.service
+Before=lightdm.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/waveshare-display-ready
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target
