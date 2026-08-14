@@ -3,333 +3,487 @@
 Hardware-qualified TI K3 accelerator platform integration for the **BeagleY-AI**
 (TI J722S / AM67A).
 
-This repository documents and automates the changes required to turn a clean
-Armbian BeagleY-AI build into a reusable TI accelerator platform with the
-remote-core firmware contract, RPMsg, reserved-memory/DMA heaps, TIOVX/VPAC
-imaging, Wave5 video codecs, and IMX219 camera support needed by higher-level
-applications such as OpenHD.
+This repository turns a clean Armbian BeagleY-AI build into a reusable TI
+accelerator platform with:
 
-The accelerator platform is intentionally independent of OpenHD. Application,
-RF, bitrate/GOP, and telemetry policy belong in consumer projects.
+- source-built Main R5 and C7x Vision Apps firmware
+- RPMsg and remoteproc sequencing
+- the qualified 4 GiB reserved-memory / DMA-heap contract
+- TI TIOVX / VPAC imaging
+- TIOVX multiscaler
+- Wave5 H.264/H.265 hardware codecs
+- IMX219 CSI0 camera support and DCC data
+- source-built TI 2A provider
+- platform-owned systemd services and `ti-k3-*` validation tools
 
-## Current qualified baseline
+The accelerator platform is intentionally independent of OpenHD. OpenHD,
+wifibroadcast/RF policy, bitrate/GOP policy, radio drivers, and
+flight-controller policy belong in consumer projects.
+
+---
+
+## Current qualified baseline: R3 source-built
 
 The current hardware-qualified baseline is:
 
-- Board: BeagleY-AI
-- SoC: TI J722S / AM67A
-- Memory: 4 GiB
+- Board: **BeagleY-AI**
+- SoC: **TI J722S / AM67A**
+- Memory: **4 GiB**
 - Kernel: `6.12.49-vendor-k3-beagle`
+- Distribution: Armbian Noble / Ubuntu 24.04
 - TI Processor SDK Linux: `11.02.01.03`
-- Camera: Raspberry Pi IMX219 on **CSI0**
-- Qualified tag: `beagley-ai-r2-hw-qualified-20260813`
-- Qualified image SHA-256:
-  `ac9925a9192e20c44b5cdc618ce8099bda53339e930d2d0be0ccc16377a363c4`
+- TI Processor SDK RTOS source: `11.02.01.03`
+- Camera qualification: Raspberry Pi **IMX219 on CSI0**
+- Qualified source tag: `beagley-ai-r3-source-hw-qualified-20260814`
+- Tested TI K3 source commit:
+  `83c62656be0a725c691cda8727421cba552c32bf`
+- Armbian source commit:
+  `259c7b157f9cc7968f077f5483ff0537f691c712`
+- Qualified compressed image SHA-256:
+  `8e263e15bd7c436bd410b774427db0a50f365810e72f8e6859f9b0f47e0f89e5`
 
-The image itself is not stored in Git. See
-[`docs/qualification/BEAGLEY-AI-R2-20260813.md`](docs/qualification/BEAGLEY-AI-R2-20260813.md)
-for the frozen qualification record.
+Qualified source-built firmware hashes:
 
-## Platform layering and ownership
+```text
+Main R5  fc56b2a0e5110dac22ba3f25e997190aa07ccaf50bee36f21cc1703c61d6c41a
+C7x 0    00ddc57e33a02a683c0077d9ef424aa1c3fa6b6a82935f335306052f355cb16b
+C7x 1    10f3b472aa7d260c0f978356a12a539f15c5e49297b408f84ee92c66f91600d5
+TI 2A    4f7b2acf81511fc0dabf7f61b88b7a7574d153cab435c178b238ecc689e6c567
+```
+
+See
+[`docs/qualification/BEAGLEY-AI-R3-SOURCE-20260814.md`](docs/qualification/BEAGLEY-AI-R3-SOURCE-20260814.md)
+for the complete qualification record.
+
+The immutable qualification tag points to the exact **tested executable source
+commit**. This README and the R3 qualification document were committed after
+hardware qualification, so they are intentionally not part of the tag target.
+Do not move the qualification tag to include later documentation commits.
+
+The previous R2 tag, `beagley-ai-r2-hw-qualified-20260813`, remains frozen as a
+historical baseline and must not be moved.
+
+### What the image SHA means
+
+The image SHA identifies the exact `.img.xz` artifact that was flashed and
+physically tested. It is **not** a requirement that a later rebuild produce the
+same whole-image hash. Package metadata, timestamps, filesystem construction,
+and other build-time inputs can change the resulting disk image even when the
+source commits are unchanged.
+
+If you rebuild from the qualified source tag, the result is a **new candidate**
+until it passes the hardware gates again.
+
+---
+
+## Architecture and ownership
 
 The intended layering is:
 
 ```text
-stock Armbian source
-  -> BeagleY-AI kernel / DT integration
-  -> qualified memory + remote-firmware contract
-  -> TI accelerator userspace + private TIOVX/GStreamer runtime
-  -> ti-k3-* systemd services and public tools
-  -> physical cold-boot accelerator qualification
-  -> optional consumer such as OpenHD
+Armbian source
+  + TI K3 kernel / DT integration
+  + fixed J722S 4 GiB memory contract
+  + source-built Main R5 / C7x firmware
+  + locked TI accelerator userspace
+  + source-built TI 2A provider
+  + private TIOVX/GStreamer runtime
+  + ti-k3-* services and tools
+        ↓
+physical cold-boot accelerator qualification
+        ↓
+optional consumer such as OpenHD
 ```
 
-`ti-k3-accelerators` owns the reusable platform layer:
+`ti-k3-accelerators` owns:
 
 - J722S/AM67A kernel configuration and device-tree integration
-- the qualified Vision Apps remote-firmware contract
-- Main R5 / C7x remoteproc sequencing
-- RPMsg readiness and validation
-- the R2 reserved-memory map
+- the Vision Apps Main R5 / C7x firmware source contract
+- firmware aliases and remoteproc sequencing
+- RPMsg readiness
+- the `j722s-beagley-ai-4gb-r73341` memory map
 - carveout DMA heaps and `ti,dma-buf-phys`
 - TI TIOVX/OpenVX userspace
-- VPAC VISS / TIOVX ISP and multiscaler
-- Wave5 H.264/H.265 hardware codec enablement
-- IMX219 camera topology, DCC data, and validation helpers
-- systemd platform services and `ti-k3-*` diagnostic tools
+- VPAC VISS / TIOVX ISP
+- TIOVX multiscaler
+- Wave5 H.264/H.265 codecs
+- IMX219 CSI0 topology, DCC assets, and graph configuration
+- systemd platform services
+- `ti-k3-*` diagnostics and qualification helpers
 
-It does **not** own OpenHD, wifibroadcast/RF policy, RTL8812AU policy, video
-bitrate/GOP policy, or flight-controller UART policy.
+It does **not** own:
 
-For the architectural boundary and porting model, see
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
-[`docs/PORTING-MODEL.md`](docs/PORTING-MODEL.md).
+- OpenHD application policy
+- wifibroadcast/RF policy
+- RTL8812AU or other consumer radio policy
+- application bitrate/GOP decisions
+- telemetry or flight-controller UART policy
 
-## What must change from stock Armbian
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
+[`docs/PORTING-MODEL.md`](docs/PORTING-MODEL.md) for the platform boundary and
+porting model.
 
-The build scripts apply these changes automatically. They are listed here so a
-new platform port can be understood and reviewed rather than treated as a
-black-box image build.
+---
 
-### 1. Kernel and device-tree support
+# Start-to-finish setup and build
 
-**Why:** stock BeagleY-AI support does not by itself provide the complete
-hardware contract used by the qualified J722S Vision Apps/TIOVX/Wave5 stack.
-The accelerator platform needs the correct CSI topology, camera overlays,
-reserved-memory layout, DMA heap/exporter support, and codec/camera modules.
+The following procedure starts from a Linux build host and ends with a
+hardware-validated BeagleY-AI accelerator platform.
 
-**Implementation:**
+## 1. Hardware required
 
-- `armbian/userpatches/kernel/archive/k3-beagle-6.12/0001-*` — BeagleY-AI CSI
-  camera I2C integration.
-- `0002-*` — board mux integration required by the BeagleY-AI display/CSI routing.
-- `0003-*` — builds the BeagleY-AI camera overlays and avoids relying on generic
-  EdgeAI-composed DTBs.
-- `0006-*` — backports the TI `dma-buf-phys` exporter used by the accelerator
-  memory contract.
-- `armbian/userpatches/kernel/archive/k3-beagle-6.12/dt/` — BeagleY-AI DT
-  supplements, the qualified 4 GiB R2 memory map, and camera-overlay source.
-- `armbian/userpatches/extensions/ti-k3-accelerators.sh` — enables the required
-  media, DMA heap, Wave5, IMX219, CSI2RX, CC33xx, and CMA kernel configuration.
+For the base accelerator platform:
 
-**Validation:** the finished image must expose `ti,dma-buf-phys`, the exact R2
-reserved-memory regions, the expected media/remoteproc modules, and the
-BeagleY-AI IMX219 overlay. The frozen result is recorded in the qualification
-document.
+- BeagleY-AI / J722S / AM67A, 4 GiB configuration
+- suitable boot media
+- stable power supply
 
-### 2. A fixed 4 GiB memory contract
+For camera qualification:
 
-**Why:** Vision Apps remote firmware, RPMsg, TIOVX, DMA heaps, and Linux must
-all agree on the same DDR layout. This cannot be safely inferred or rearranged
-at runtime.
+- Raspberry Pi IMX219 camera
+- camera connected to **CSI0**
 
-**Implementation:**
+Connect or disconnect the camera only while the board is powered off.
 
-- `profiles/memory/j722s-beagley-ai-4gb.json`
-- `armbian/userpatches/kernel/archive/k3-beagle-6.12/dt/k3-am67a-beagley-ai-ti-k3-edgeai-memory-map.dtsi`
-- `ti-k3-memory-map-verify`
+## 2. Build-host requirements
 
-The memory profile is explicit and hardware-qualified; it is not a dynamic
-"use whatever RAM is available" policy.
+Use an x86-64 Linux host with:
 
-**Validation:**
+- Git
+- Docker with a working daemon
+- curl
+- xz utilities
+- standard GNU userland tools
+- enough free disk space for Armbian, TI SDK sources, TI rootfs extraction, and
+  Docker build layers
+
+Verify the basics:
 
 ```bash
-sudo ti-k3-memory-map-verify
+git --version
+docker --version
+docker info
+curl --version
+xz --version
 ```
 
-### 3. Qualified Main R5 and C7x firmware
+The image wrapper builds through Docker and pins its Ubuntu Noble base image by
+digest.
 
-**Why:** the Linux host only works if the Vision Apps firmware, firmware aliases,
-linker placement, and memory map match. The independent source rebuild did not
-reproduce every remote binary bit-for-bit, so the hardware-qualified cohort is
-the deployment authority.
+## 3. Obtain the TI Processor SDK RTOS source and tools
 
-**Implementation:** `prepare-armbian.sh` verifies the exact Main R5 and two C7x
-hashes before staging them. `customize-image.sh` installs the cohort and writes
-`/etc/ti-k3/vision-apps-firmware.sha256`.
+The repository does not vendor TI's RTOS SDK or compiler installations. Obtain
+the matching official J722S TI Processor SDK RTOS source release and install or
+extract it locally.
 
-The required aliases are:
+Required RTOS source release:
 
 ```text
-j722s-main-r5f0_0-fw -> vision_apps_evm/vx_app_rtos_linux_mcu2_0.out
-j722s-c71_0-fw       -> vision_apps_evm/vx_app_rtos_linux_c7x_1.out
-j722s-c71_1-fw       -> vision_apps_evm/vx_app_rtos_linux_c7x_2.out
+TI Processor SDK RTOS J722S 11.02.01.03
 ```
 
-**Validation:** firmware identity is checked during image construction and again
-by the live platform qualification tools.
-
-### 4. TI accelerator userspace on top of Armbian/Noble
-
-**Why:** TIOVX, imaging, DCC, RPMsg support libraries, and TI GStreamer elements
-are not supplied by normal Armbian/Noble packages.
-
-**Implementation:**
-
-- `inputs/ti-linux-j722s-11.02.01.03.env` pins the official TI PSDK Linux image.
-- `inputs/ti-j722s-11.02.01.03-userspace-files.lock` and
-  `inputs/ti-j722s-11.02.01.03-userspace-packages.lock` define the allowed TI
-  payload.
-- `scripts/import-ti-userspace-locked.sh` imports only the locked accelerator
-  assets and rejects distribution-core replacement libraries.
-- `inputs/ti-edgeai-development-headers.*` and
-  `scripts/import-ti-edgeai-development-headers.sh` reconstruct the required
-  development headers from pinned TI sources.
-
-This keeps Armbian/Noble as the Linux distribution while adding only the TI
-accelerator payload that the platform actually needs.
-
-### 5. Private TIOVX/GStreamer compatibility runtime
-
-**Why:** the release TI userspace is the provenance baseline, but the active
-Armbian/Noble integration requires a source-built compatibility plugin exposing
-the factories used by the qualified pipeline.
-
-**Implementation:** `customize-image.sh` invokes the `ti-k3-build-*` helpers in
-`armbian/userpatches/overlay/usr/local/sbin/` and publishes the selected runtime
-under the TI K3 namespace. Consumers source:
+The firmware build manifest requires these tools:
 
 ```text
-/etc/ti-k3/gstreamer.env
+TI ARM LLVM        4.0.4.LTS
+TI C7000 compiler  5.0.0.LTS
+TI SysConfig       1.26.2
 ```
 
-The original TI release plugin remains preserved; the selected compatibility
-plugin is built from pinned Texas Instruments source.
-
-**Validation:** `ti-k3-self-test` verifies the runtime and required TIOVX
-factories.
-
-### 6. Platform-owned remoteproc startup and RPMsg readiness
-
-**Why:** remote-core startup order is part of the qualified firmware/memory
-contract. Applications must not race firmware startup or manipulate remoteproc
-sysfs themselves.
-
-**Implementation:**
+A convenient layout is:
 
 ```text
-ti-k3-accelerators.target
-  -> ti-k3-remoteproc-prepare.service
-  -> ti-k3-remote-log.service
-  -> ti-k3-wave5-prepare.service
+$HOME/ti-sdk-11.02.01/rtos-src/
+$HOME/ti/
+  ti-cgt-armllvm_4.0.4.LTS/
+  ti-cgt-c7000_5.0.0.LTS/
+  sysconfig_1.26.2/
 ```
 
-The service/helper layer lives under
-`armbian/userpatches/overlay/etc/systemd/system/` and
-`armbian/userpatches/overlay/usr/local/sbin/`.
-
-The qualified sequence brings up the Main R5 contract before the delayed C7x
-portion and waits for the required RPMsg endpoints.
-
-**Validation:**
+Set the environment:
 
 ```bash
-sudo ti-k3-rpmsg-ready
-sudo ti-k3-self-test
+export PSDK_RTOS="$HOME/ti-sdk-11.02.01/rtos-src"
+export PSDK_TOOLS_PATH="$HOME/ti"
 ```
 
-Do not manually write `/sys/class/remoteproc/*/state`.
+Verify the required inputs exist:
 
-### 7. IMX219 CSI0 + DCC + hardware video path
+```bash
+test -d "$PSDK_RTOS/sdk_builder" && echo "PASS: sdk_builder"
+test -d "$PSDK_RTOS/imaging/ti_2a_wrapper" && echo "PASS: imaging/ti_2a_wrapper"
+test -x "$PSDK_TOOLS_PATH/ti-cgt-armllvm_4.0.4.LTS/bin/tiarmclang" && echo "PASS: tiarmclang"
+test -x "$PSDK_TOOLS_PATH/ti-cgt-c7000_5.0.0.LTS/bin/cl7x" && echo "PASS: cl7x"
+test -d "$PSDK_TOOLS_PATH/sysconfig_1.26.2" && echo "PASS: SysConfig"
+```
 
-**Why:** the air-camera pipeline requires a known sensor topology, TI imaging
-calibration data, TIOVX ISP/multiscaler, and Wave5 H.264 working together.
+The RTOS SDK tree must also contain the AArch64 Linux cross-toolchain shipped
+with the SDK under its `toolchain/sysroots/...` hierarchy. The TI 2A source
+builder uses that toolchain to validate the produced AArch64 library.
 
-**Implementation:** the image contains the BeagleY-AI IMX219 overlay, camera
-setup/discovery helpers, DCC assets under `/opt/imaging/imx219/`, and
-`ti-k3-imx219-prepare.service`.
+### Use a clean RTOS source tree
 
-The generic accelerator target does not automatically claim a camera; camera
-preparation is an explicit optional service so non-camera consumers remain
-valid.
+The preparation flow applies the repository's J722S firmware reconstruction
+patches directly to the supplied RTOS source tree. For a qualification build,
+use a fresh dedicated extraction/copy rather than a shared development tree.
 
-**Validation:** use the staged IMX219 tests described below.
+If the tree already contains the canonical application-neutral reconstruction,
+`prepare-armbian.sh` recognizes it. If it detects the old temporary
+`*_openhd.c` / `OHDBG` reproduction experiment, it refuses to continue; restore
+the generic state or use a fresh RTOS tree.
 
-## Step-by-step: build the qualified Armbian platform
+## 4. Clone this repository
 
-### Step 1 — Prepare the build host
+For the exact executable source that produced the R3 hardware-qualified image:
 
-Use a Linux build host with Git, Docker, curl, xz, and enough free disk space
-for an Armbian build and the TI SDK root filesystem.
+```bash
+git clone https://github.com/ILAMtitan/ti-k3-accelerators.git
+cd ti-k3-accelerators
+git checkout beagley-ai-r3-source-hw-qualified-20260814
+```
 
-You need:
+Verify the tag target:
 
-1. this repository
-2. a clean Armbian build checkout
-3. the frozen hardware-qualified R2 firmware staging directory
+```bash
+git rev-list -n 1 beagley-ai-r3-source-hw-qualified-20260814
+```
 
-The qualified Armbian source commit is:
+Expected:
+
+```text
+83c62656be0a725c691cda8727421cba552c32bf
+```
+
+If you are developing beyond the frozen qualification point, use the active
+source branch instead of moving the tag.
+
+## 5. Run repository contract checks
+
+Before preparing Armbian:
+
+```bash
+bash tests/test-boundary.sh
+bash tests/test-contract.sh
+bash tests/test-sdk-inputs.sh
+```
+
+Expected final lines include:
+
+```text
+PASS: TI pass-1 boundary and shell syntax
+PASS: TI dependency and ownership contract
+PASS: TI SDK application-neutral zero-frozen firmware/2A source-input contract
+```
+
+These tests verify ownership boundaries and the source-input contract. They do
+not replace physical hardware qualification.
+
+## 6. Clone and pin Armbian
+
+Use a dedicated clean Armbian checkout. `prepare-armbian.sh` intentionally
+refuses to overwrite a non-empty `userpatches` tree.
+
+```bash
+export ARMBIAN="$HOME/armbian-j722s-ti-k3"
+export ARMBIAN_COMMIT=259c7b157f9cc7968f077f5483ff0537f691c712
+
+git clone https://github.com/armbian/build.git "$ARMBIAN"
+git -C "$ARMBIAN" checkout "$ARMBIAN_COMMIT"
+
+git -C "$ARMBIAN" rev-parse HEAD
+git -C "$ARMBIAN" status -sb
+```
+
+The expected Armbian commit is:
 
 ```text
 259c7b157f9cc7968f077f5483ff0537f691c712
 ```
 
-### Step 2 — Clone and pin the sources
+## 7. Prepare the Armbian tree
 
-```bash
-git clone https://github.com/ILAMtitan/ti-k3-accelerators.git
-cd ti-k3-accelerators
-git checkout beagley-ai-r2-hw-qualified-20260813
+`prepare-armbian.sh` is the source-input handoff into Armbian. It:
 
-cd ..
-git clone https://github.com/armbian/build.git armbian-build
-git -C armbian-build checkout 259c7b157f9cc7968f077f5483ff0537f691c712
-```
+1. validates or applies the application-neutral J722S RTOS reconstruction
+2. builds Main R5 and both C7x firmware images from the supplied PSDK RTOS tree
+3. builds the TI 2A wrapper from `imaging/ti_2a_wrapper`
+4. downloads or verifies the exact TI PSDK Linux rootfs archive
+5. extracts the TI image into a temporary work area
+6. imports only the package/path-locked TI accelerator userspace
+7. reconstructs the pinned TI EdgeAI development headers
+8. stages source-build provenance for firmware and TI 2A
+9. installs this repository's Armbian kernel/DT/config/overlay integration into
+   the clean Armbian `userpatches` tree
 
-Use the qualified tag when reproducing the frozen hardware result. Use a newer
-branch only when intentionally validating newer integration work.
+No frozen Vision Apps firmware directory is accepted. `--firmware` is
+intentionally rejected.
 
-### Step 3 — Reconstruct the TI inputs and prepare Armbian
-
-`prepare-armbian.sh` is the handoff from upstream inputs into the Armbian build.
-It:
-
-1. verifies the qualified remote-firmware hashes
-2. obtains or verifies the exact TI PSDK Linux rootfs archive
-3. extracts the TI image to a temporary work area
-4. reconstructs the package/path-locked TI userspace payload
-5. reconstructs the pinned TI development headers
-6. copies this repository's Armbian kernel/DT/config/overlay integration into a
-   clean `userpatches/` tree
-7. stages the frozen remote firmware separately from the Linux userspace payload
-
-For large temporary extraction work, use a disk-backed work directory:
+Use a disk-backed work area:
 
 ```bash
 export TI_K3_WORKDIR_BASE="$HOME/ti-k3-work"
 mkdir -p "$TI_K3_WORKDIR_BASE"
 
 ./prepare-armbian.sh \
-    --firmware /path/to/qualified-r2-firmware-staging \
-    /path/to/armbian-build
+    --ti-rtos-src "$PSDK_RTOS" \
+    "$ARMBIAN"
 ```
 
-If the TI rootfs archive is already available locally:
+If the exact TI Linux rootfs archive is already available locally:
 
 ```bash
 ./prepare-armbian.sh \
-    --ti-rootfs-archive /path/to/tisdk-adas-image-j722s-evm.rootfs.tar.xz \
-    --firmware /path/to/qualified-r2-firmware-staging \
-    /path/to/armbian-build
+    --ti-rootfs-archive /path/to/tisdk-adas-image-j722s-evm.tar.xz \
+    --ti-rtos-src "$PSDK_RTOS" \
+    "$ARMBIAN"
 ```
 
-The script refuses to overwrite a non-empty Armbian `userpatches` tree. Use a
-dedicated clean Armbian checkout rather than merging unrelated userpatches into
-a qualification build.
+The pinned TI Linux archive is:
 
-### Step 4 — Build the image
-
-The wrapper uses the pinned Docker/Ubuntu Noble build environment:
-
-```bash
-./build-image.sh --jobs "$(nproc)" /path/to/armbian-build
+```text
+release: 11.02.01.03
+file:    tisdk-adas-image-j722s-evm.tar.xz
+SHA256:  01b8e762db99673108b423e8dcb1e5f2c00bdba17359dcd00600b49db030ded4
 ```
 
-The resulting image is written by Armbian under `output/images/`.
+When `--ti-rootfs-archive` is omitted, the script downloads the URL recorded in
+`inputs/ti-linux-j722s-11.02.01.03.env` and verifies that SHA-256 before use.
 
-For development, the prepared Armbian tree can also be built directly:
+Important successful preparation markers include:
+
+```text
+J722S_R2_SOURCE_FIRMWARE_STAGING=PASS
+TI_R2_FIRMWARE_SOURCE_INPUT=PASS
+TI_2A_SOURCE_BUILD=PASS
+TI_2A_SOURCE_INPUT=PASS
+TI_USERSPACE_LOCK_IMPORT=PASS
+TI_USERSPACE_PROVENANCE_GENERATED=PASS
+SOURCE_FIRMWARE_STAGING_BOUNDARY=PASS
+TI_K3_ARMBIAN_INPUT_PREPARATION=PASS
+```
+
+Some script/file names retain `r2` because they describe the source
+reconstruction generation that R3 qualified. They do **not** mean the active
+build is using the frozen R2 firmware cohort.
+
+## 8. Inspect the staged source-build contract
+
+Before building the image:
 
 ```bash
-cd /path/to/armbian-build
+FW_STAGE="$ARMBIAN/userpatches/overlay/opt/ti-k3-port/firmware-source-build"
+TI2A_STAGE="$ARMBIAN/userpatches/overlay/opt/ti-k3-port/ti-2a-provider-source"
+
+cat "$FW_STAGE/SOURCE-BUILD.env"
+cat "$FW_STAGE/SHA256SUMS"
+cat "$TI2A_STAGE/SOURCE-BUILD.env"
+```
+
+The firmware metadata must identify the application-neutral candidate:
+
+```text
+build_mode=ti-psdk-rtos-source-built-r2
+qualification_status=unqualified_source_candidate
+vendor=Texas_Instruments
+soc=j722s
+memory_map_id=j722s-beagley-ai-4gb-r73341
+r5_driver_basename=ti_drivers_config_j722s.c
+r5_power_clock_basename=ti_power_clock_config_j722s.c
+r5_trace_prefix=J7DBG
+```
+
+`qualification_status=unqualified_source_candidate` is intentional. A build
+cannot declare itself hardware-qualified before the resulting image has been
+flashed and physically tested.
+
+The post-build qualification record/tag is the attestation that promotes an
+exact artifact after testing.
+
+## 9. Build the image
+
+Use the repository wrapper so the Armbian host container starts from the pinned
+Ubuntu Noble image digest:
+
+```bash
+./build-image.sh --jobs "$(nproc)" "$ARMBIAN"
+```
+
+The wrapper verifies Docker availability, pulls/tags the pinned container base,
+and runs:
+
+```text
 ./compile.sh build ti-k3-beagley-ai
 ```
 
-During image customization, `armbian/userpatches/customize-image.sh` installs the
-locked TI payload, installs/verifies the frozen firmware, validates the combined
-DT/camera memory contract and DCC files, builds the private TI GStreamer runtime,
-and enables `ti-k3-accelerators.target`.
+inside Armbian's Docker build path.
 
-### Step 5 — Flash the image
+The output image is placed under:
 
-Flash the generated image to BeagleY-AI boot media using your normal raw-image
-writer. When reproducing the qualified image, compare the compressed artifact
-SHA-256 to the value in the qualification record.
+```text
+$ARMBIAN/output/images/
+```
 
-### Step 6 — Select IMX219 on CSI0
+List the generated image and record its hash:
 
-The platform itself can run without a camera. For the qualified camera path,
-select the CSI0 IMX219 overlay once:
+```bash
+find "$ARMBIAN/output/images" \
+    -maxdepth 1 \
+    -type f \
+    -name '*.img.xz' \
+    -print
+
+sha256sum "$ARMBIAN"/output/images/*.img.xz
+```
+
+A newly rebuilt image is a new candidate even if the source commits match the
+R3 tag.
+
+### Docker/APT cache troubleshooting
+
+If the Armbian Docker host-image build fails with a Ubuntu package `404 Not
+Found` while installing host dependencies, a cached Docker APT layer may be
+stale relative to the Ubuntu mirror. Clear the Docker **builder cache** and
+retry the image build:
+
+```bash
+docker builder prune -af
+```
+
+Do not change TI inputs, remove required packages, or pin an obsolete Ubuntu
+package revision to work around a transient mirror/cache mismatch.
+
+If preparation already completed successfully, a Docker host-image failure does
+not require re-running `prepare-armbian.sh`.
+
+## 10. Flash the image
+
+Flash the generated `.img.xz` to the BeagleY-AI boot media with your preferred
+raw-image writer.
+
+Examples include Balena Etcher, Raspberry Pi Imager, or `xz` + `dd`. Be very
+careful to select the correct target device if using `dd`; it is destructive.
+
+If you possess the exact R3 qualified image artifact, its compressed SHA-256 is:
+
+```text
+8e263e15bd7c436bd410b774427db0a50f365810e72f8e6859f9b0f47e0f89e5
+```
+
+A different hash does not automatically mean the build is wrong; it means it
+is a different artifact and therefore needs its own qualification if it will
+be treated as a frozen baseline.
+
+## 11. Optional: select IMX219 on CSI0
+
+The generic accelerator platform does **not** automatically claim a camera.
+This is deliberate so headless and non-camera consumers can use the same base.
+
+For the qualified camera configuration:
+
+1. power the board off
+2. connect the IMX219 to **CSI0**
+3. boot the board
+4. select the IMX219 CSI0 overlay
 
 ```bash
 sudo ti-k3-select-camera-overlay imx219 0
@@ -337,47 +491,125 @@ sync
 sudo poweroff
 ```
 
-### Step 7 — Perform a complete physical cold power cycle
+The helper removes stale package-managed camera/EdgeAI overlays and selects:
 
-After the board is fully powered down, remove and reapply power.
+```text
+k3-am67a-beagley-ai-csi0-imx219.dtbo
+```
 
-A warm `reboot` is **not** considered equivalent for remote-firmware
-qualification. Do not manually write to:
+After shutdown, **physically remove power and reapply it**.
+
+A warm `reboot` is not accepted as the remote-firmware qualification cold-boot
+gate.
+
+## 12. Cold-boot platform validation
+
+Do not manually write to:
 
 ```text
 /sys/class/remoteproc/*/state
 ```
 
-The platform services own the qualified sequence.
+The platform services own remoteproc startup and RPMsg sequencing.
 
-### Step 8 — Validate the accelerator platform before the camera
+After a complete physical cold power cycle, inspect the installed provenance:
+
+```bash
+cat /var/lib/ti-k3/platform.env
+cat /var/lib/ti-k3/vision-apps-source-build.env
+sha256sum -c /etc/ti-k3/vision-apps-firmware.sha256
+```
+
+Check the platform services:
 
 ```bash
 systemctl --failed --no-pager
 systemctl status ti-k3-accelerators.target --no-pager
-
-sudo ti-k3-memory-map-verify
-sudo ti-k3-rpmsg-ready
-sudo ti-k3-self-test
-sudo ti-k3-wave5-verify
+systemctl status ti-k3-remoteproc-prepare.service --no-pager
 ```
 
-For the standalone acceptance criteria, see
-[`docs/PASS1-TEST-PLAN.md`](docs/PASS1-TEST-PLAN.md). Do not install OpenHD until
-this accelerator-only gate passes.
-
-### Step 9 — Prepare and validate IMX219 on CSI0
+Read-only remoteproc inspection:
 
 ```bash
-sudo systemctl start ti-k3-imx219-prepare.service
+for r in /sys/class/remoteproc/remoteproc*; do
+    echo "[$r]"
+    printf 'name='; cat "$r/name" 2>/dev/null
+    printf 'firmware='; cat "$r/firmware" 2>/dev/null
+    printf 'state='; cat "$r/state" 2>/dev/null
+    echo
+done
+```
 
+For the Vision Apps cohort, the qualified state is:
+
+```text
+remoteproc2  Main R5   j722s-main-r5f0_0-fw  running
+remoteproc3  C7x 0     j722s-c71_0-fw         running
+remoteproc4  C7x 1     j722s-c71_1-fw         running
+```
+
+Then run the public acceptance tools:
+
+```bash
+sudo ti-k3-memory-map-verify
+sudo ti-k3-rpmsg-ready
+sudo ti-k3-wave5-verify
+sudo ti-k3-self-test
+```
+
+`ti-k3-self-test` must report PASS for:
+
+```text
+memory-map verification
+RPMsg readiness
+Wave5 verification
+firmware hashes
+GStreamer tiovxisp
+GStreamer tiovxmultiscaler
+GStreamer v4l2h264enc
+GStreamer v4l2h264dec
+GStreamer v4l2h265enc
+GStreamer v4l2h265dec
+```
+
+Do not install a higher-level consumer such as OpenHD until this base gate
+passes.
+
+## 13. IMX219 CSI0 validation
+
+After the CSI0 overlay is selected and the board has completed the physical
+cold boot, run:
+
+```bash
 sudo ti-k3-test-imx219 detect
 sudo ti-k3-test-imx219 raw
 sudo ti-k3-test-imx219 isp
 sudo ti-k3-test-imx219 encode
 ```
 
-The qualified `encode` path is:
+The current helper configures the IMX219 media graph before raw/ISP/encode tests
+and performs a raw stream preflight. This prevents an unconfigured media graph
+from producing a misleading camera result.
+
+Expected raw path:
+
+```text
+IMX219
+  -> Cadence CSI2RX bridge
+  -> TI J721E CSI2RX
+  -> 1920x1080 RGGB / SRGGB8_1X8 @ ~30 fps
+```
+
+Expected ISP path:
+
+```text
+IMX219 CSI0
+  -> 1920x1080 RGGB @ 30 fps
+  -> TIOVX ISP / VPAC VISS
+  -> 1920x1080 NV12 @ 30 fps
+```
+
+Expected full accelerator path:
 
 ```text
 IMX219 CSI0
@@ -386,10 +618,14 @@ IMX219 CSI0
   -> 1920x1080 NV12
   -> TIOVX MultiScaler
   -> 1280x720 NV12 @ 30 fps
-  -> Wave5 H.264
+  -> Wave5 v4l2h264enc
+  -> H.264 byte-stream / AU alignment
 ```
 
-The camera service publishes the application-facing contract under:
+The R3 qualification observed approximately 30.01 fps on the raw stream and
+completed the ISP and full encode paths successfully.
+
+The camera contract is published at:
 
 ```text
 /run/ti-k3/camera.env
@@ -397,29 +633,288 @@ The camera service publishes the application-facing contract under:
 /run/ti-k3/camera-subdev
 ```
 
-### Step 10 — Freeze the accelerator base before adding an application
+## 14. Qualification acceptance criteria
 
-Once memory, RPMsg, TIOVX, Wave5, and the desired camera path pass after a
-physical cold boot, treat that image as the platform baseline. Higher-level
-applications should consume the `ti-k3-*` API rather than modify firmware,
-remoteproc, memory carveouts, or the TI runtime.
+A candidate is not a hardware-qualified platform merely because it builds.
+For the R3-equivalent accelerator/camera scope, require all of the following
+after a physical cold boot:
 
-The OpenHD consumer is maintained separately in
-`ILAMtitan/openhd-k3-integration`.
+```text
+source-built firmware hashes           PASS
+Main R5 running                         PASS
+C7x 0 running                           PASS
+C7x 1 running                           PASS
+RPMsg endpoints 13/21                   PASS
+memory-map verification                 PASS
+TI K3 self-test                         PASS
+Wave5 runtime                           PASS
+IMX219 CSI0 detect                      PASS
+IMX219 raw 1920x1080 RGGB ~30 fps       PASS
+TIOVX ISP 1920x1080 NV12                PASS
+TIOVX multiscaler 1280x720              PASS
+Wave5 H.264 encode                      PASS
+```
 
-## Useful platform commands
+For a new frozen baseline, record at minimum:
+
+- TI K3 source commit
+- Armbian source commit
+- compressed image SHA-256
+- Main R5 SHA-256
+- both C7x SHA-256 values
+- TI 2A provider SHA-256
+- physical cold-boot result
+- camera/accelerator results for the declared qualification scope
+
+Do not move an existing qualification tag to a later commit. Create a new
+qualification record/tag for a new artifact or source state.
+
+---
+
+# What changes from stock Armbian
+
+## Kernel and device-tree integration
+
+The platform adds the BeagleY-AI/J722S pieces required by the TI accelerator
+stack, including:
+
+- CSI camera integration
+- BeagleY-AI camera overlays
+- reserved-memory integration
+- carveout DMA heap support
+- `ti,dma-buf-phys`
+- Wave5 codec configuration
+- IMX219 / Cadence CSI2RX / TI J721E CSI2RX support
+- required remoteproc modules
+
+The relevant files are under:
+
+```text
+armbian/userpatches/kernel/archive/k3-beagle-6.12/
+armbian/userpatches/extensions/ti-k3-accelerators.sh
+```
+
+## Fixed J722S 4 GiB memory contract
+
+Vision Apps remote firmware, RPMsg, TIOVX, DMA heaps, and Linux must agree on
+the same DDR layout. The platform therefore uses an explicit qualified memory
+profile rather than dynamically rearranging carveouts at runtime.
+
+Primary sources:
+
+```text
+profiles/memory/j722s-beagley-ai-4gb.json
+armbian/userpatches/kernel/archive/k3-beagle-6.12/dt/
+```
+
+Live validation:
 
 ```bash
+sudo ti-k3-memory-map-verify
+```
+
+## Source-built Main R5 and C7x firmware
+
+The production source contract is application-neutral:
+
+```text
+generated/ti_drivers_config_j722s.c
+generated/ti_power_clock_config_j722s.c
+J7DBG
+```
+
+Historical OpenHD-specific `_openhd.c` basenames and `OHDBG` strings were used
+only in a source-reproduction experiment. They are not part of the permanent
+TI accelerator firmware contract.
+
+The required firmware aliases remain:
+
+```text
+j722s-main-r5f0_0-fw -> vision_apps_evm/vx_app_rtos_linux_mcu2_0.out
+j722s-c71_0-fw       -> vision_apps_evm/vx_app_rtos_linux_c7x_1.out
+j722s-c71_1-fw       -> vision_apps_evm/vx_app_rtos_linux_c7x_2.out
+```
+
+The R3 source-built firmware is hardware-qualified on its own merits. The Main
+R5 is intentionally not required to be byte-identical to the older R2 Main R5
+load image.
+
+## Locked TI accelerator userspace
+
+TI accelerator userspace is imported from the exact official PSDK Linux
+`11.02.01.03` `tisdk-adas-image-j722s-evm` archive.
+
+The repository uses:
+
+```text
+inputs/ti-linux-j722s-11.02.01.03.env
+inputs/ti-j722s-11.02.01.03-userspace-files.lock
+inputs/ti-j722s-11.02.01.03-userspace-packages.lock
+scripts/import-ti-userspace-locked.sh
+```
+
+The importer rejects distribution-core replacement libraries so Armbian/Noble
+remains the Linux distribution rather than being overwritten by the TI rootfs.
+
+Additional development headers are reconstructed from pinned TI sources using:
+
+```text
+inputs/ti-edgeai-development-headers.env
+inputs/ti-edgeai-development-headers.lock
+scripts/import-ti-edgeai-development-headers.sh
+```
+
+## Source-built TI 2A provider
+
+`build-ti-2a-provider-from-psdk.sh` builds the J722S imaging target and discovers
+the freshly produced AArch64 provider defining:
+
+```text
+TI_2A_wrapper_create
+TI_2A_wrapper_process
+TI_2A_wrapper_delete
+```
+
+The source-built R3 provider SHA-256 is:
+
+```text
+4f7b2acf81511fc0dabf7f61b88b7a7574d153cab435c178b238ecc689e6c567
+```
+
+It reproduced the historical provider byte-for-byte, but the active build path
+uses the freshly built source output rather than a frozen copy.
+
+## Private TIOVX/GStreamer runtime
+
+The image keeps the normal Armbian/Noble multimedia stack and publishes the TI
+compatibility runtime separately. Consumers that need TI elements use:
+
+```text
+/etc/ti-k3/gstreamer.env
+```
+
+The selected compatibility plugin is built from pinned Texas Instruments source
+when required by the Noble integration.
+
+## Platform-owned remoteproc startup
+
+Applications must not start/stop Vision Apps remote cores themselves.
+
+The platform owns the sequence through:
+
+```text
+ti-k3-accelerators.target
+ti-k3-remoteproc-prepare.service
+ti-k3-remote-log.service
+ti-k3-wave5-prepare.service
+```
+
+The Main R5 endpoint is established before the delayed C7x startup/readiness
+sequence.
+
+Never use warm manual remoteproc restarts as a substitute for qualification.
+
+---
+
+# Troubleshooting
+
+## `prepare-armbian.sh` rejects non-empty `userpatches`
+
+Use a fresh dedicated Armbian checkout. The script intentionally refuses to
+merge this platform into an unknown pre-existing userpatch tree during a
+qualification build.
+
+## RTOS tree reports historical OpenHD reproduction state
+
+The permanent firmware source contract is `_j722s.c` + `J7DBG`. Do not convert
+historical experiment files in-place during a qualification build. Use a fresh
+matching TI PSDK RTOS source tree or restore the canonical application-neutral
+state first.
+
+## Docker build gets Ubuntu package 404s
+
+If the failure occurs while constructing Armbian's Docker host environment and
+shows an obsolete Ubuntu package revision, clear the Docker builder cache:
+
+```bash
+docker builder prune -af
+```
+
+Then rerun `build-image.sh`. Do not alter the TI firmware/userspace inputs for a
+host-container APT cache problem.
+
+## `Unexpected TI 2A source-build identity`
+
+The canonical SoC identity is lowercase:
+
+```text
+soc=j722s
+```
+
+Current builds and contract tests enforce the same identity from the firmware
+manifest through the TI 2A producer and image consumer.
+
+## IMX219 is not detected after flashing
+
+A newly flashed image does not automatically select a camera overlay. On the
+board:
+
+```bash
+sudo ti-k3-select-camera-overlay imx219 0
+sync
+sudo poweroff
+```
+
+Then physically remove and reapply power.
+
+## Raw camera stream reports `Broken pipe`
+
+Current `ti-k3-test-imx219 raw|isp|encode` configures and verifies the media
+graph before the main test. If diagnosing manually, run:
+
+```bash
+sudo ti-k3-configure-imx219-graph --verify-stream
+```
+
+Do not treat a `v4l2-ctl` zero exit status as sufficient if its output reports a
+stream-on error. The current qualification helper explicitly checks for these
+errors.
+
+## Remoteproc trouble
+
+Inspect state read-only:
+
+```bash
+for r in /sys/class/remoteproc/remoteproc*; do
+    echo "$r"
+    cat "$r/name" "$r/firmware" "$r/state" 2>/dev/null
+done
+```
+
+Do not manually write `start`, `stop`, or firmware names into remoteproc sysfs
+during qualification. A full physical cold power cycle is the required reset
+boundary.
+
+---
+
+# Useful installed commands
+
+```text
 ti-k3-info
 ti-k3-memory-map-verify
 ti-k3-rpmsg-ready
 ti-k3-self-test
 ti-k3-wave5-verify
 ti-k3-find-camera-devices
+ti-k3-configure-imx219-graph
+ti-k3-select-camera-overlay
 ti-k3-test-imx219 detect
+ti-k3-test-imx219 raw
+ti-k3-test-imx219 isp
+ti-k3-test-imx219 encode
 ```
 
-Service status:
+Useful service status commands:
 
 ```bash
 systemctl status ti-k3-accelerators.target
@@ -429,43 +924,55 @@ systemctl status ti-k3-remote-log.service
 systemctl status ti-k3-imx219-prepare.service
 ```
 
-## Source and provenance model
+---
 
-The platform deliberately separates several provenance classes:
+# Source and provenance model
 
-- TI accelerator userspace is reconstructed from the official TI PSDK Linux
-  `11.02.01.03` `tisdk-adas-image` using package/path identity locks.
-- additional EdgeAI development headers are reconstructed from pinned Texas
-  Instruments source repositories.
-- the active TIOVX compatibility plugin is built from pinned
-  `TexasInstruments/edgeai-gst-plugins` source when the release plugin does not
-  provide every required factory.
-- the remote-core binaries remain the frozen hardware-qualified R2 firmware
-  cohort; an independent RTOS rebuild did not reproduce every binary
-  bit-for-bit and is not substituted into the qualified image.
+The R3 production build path uses:
 
-The current release does not claim that every remaining third-party or RTOS
-build input has completed strict source-origin hardening. The qualification
-document records the remaining provenance work separately.
+```text
+pinned Armbian source
++ this repository
++ official TI PSDK Linux 11.02.01.03 image
++ official TI PSDK RTOS 11.02.01.03 source
++ pinned TI/public source dependencies
++ TI compiler/SysConfig tools
+        ↓
+source-built Main R5 + C7x firmware
+source-built TI 2A provider
+locked TI accelerator userspace
+private TI/TIOVX compatibility runtime
+        ↓
+bootable Armbian accelerator image
+```
 
-## Repository layout
+Historical frozen firmware and forensic reference files are retained only as
+evidence/reference material. They are not required production build inputs for
+R3.
 
-- `armbian/userpatches/` - kernel, DT, systemd, tools, and image integration
-- `inputs/` - locked TI Linux and development-header inputs
-- `scripts/` - deterministic TI input extraction/import tools
-- `profiles/` - board, SoC, and memory profiles
-- `firmware/` - current R2 source-reconstruction support; deployed firmware is
-  still the frozen hardware-qualified cohort described above
-- `reference/r73341/` - qualified/historical reference material
-- `tests/` - static ownership and source-input contract tests
-- `docs/` - architecture, porting notes, standalone test plan, and qualification
-  records
-- `prepare-armbian.sh` - prepare a clean Armbian checkout
-- `build-image.sh` - build with the pinned container environment
+"Zero-frozen" in this repository refers specifically to removing the historical
+frozen Vision Apps firmware and TI 2A provider from the required build path. It
+does not claim that an entire Linux image is hermetically or byte-for-byte
+reproducible across time.
 
-## Repository checks
+---
 
-Run the contract checks before publishing changes:
+# Repository layout
+
+```text
+armbian/userpatches/   Armbian kernel, DT, config, services, tools, image integration
+inputs/                locked TI Linux and development-header inputs
+scripts/               TI input extraction/import and TI 2A source-build tools
+profiles/              board, SoC, and memory profiles
+firmware/              J722S firmware reconstruction patches/build/staging tools
+reference/r73341/      historical/forensic qualification reference material
+tests/                  static ownership and source-input contract tests
+docs/                   architecture, porting, test plans, qualification records
+prepare-armbian.sh      prepare a clean Armbian checkout from source inputs
+build-image.sh          build through the pinned Docker/Armbian environment
+```
+
+Repository checks:
 
 ```bash
 bash tests/test-boundary.sh
@@ -473,28 +980,30 @@ bash tests/test-contract.sh
 bash tests/test-sdk-inputs.sh
 ```
 
-These tests protect ownership boundaries and locked external inputs. Git itself
-provides integrity/versioning for ordinary repository files, so the repository
-does not maintain a second whole-tree checksum manifest.
+Git provides integrity/versioning for repository files; the repository does not
+maintain a second whole-tree checksum manifest.
 
-## Further documentation
+---
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — platform layers, ownership,
-  and why applications consume stable services/tools instead of internals.
-- [`docs/PORTING-MODEL.md`](docs/PORTING-MODEL.md) — how SoC, board, and memory
-  profiles are separated for future K3 targets.
-- [`docs/PASS1-TEST-PLAN.md`](docs/PASS1-TEST-PLAN.md) — accelerator-only
-  acceptance before any consumer is installed.
+# Further documentation
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — platform layers and ownership
+- [`docs/PORTING-MODEL.md`](docs/PORTING-MODEL.md) — SoC/board/memory separation
+- [`docs/PASS1-TEST-PLAN.md`](docs/PASS1-TEST-PLAN.md) — standalone accelerator
+  acceptance plan
+- [`docs/qualification/BEAGLEY-AI-R3-SOURCE-20260814.md`](docs/qualification/BEAGLEY-AI-R3-SOURCE-20260814.md)
+  — current R3 source-built hardware qualification
 - [`docs/qualification/BEAGLEY-AI-R2-20260813.md`](docs/qualification/BEAGLEY-AI-R2-20260813.md)
-  — exact qualified sources, artifact hashes, firmware identities, and hardware
-  results.
+  — historical frozen R2 qualification
 
-## OpenHD consumer
+---
 
-OpenHD is layered on top only after this platform is qualified. The consumer
-integration lives in:
+# OpenHD consumer
 
-https://github.com/ILAMtitan/openhd-k3-integration
+OpenHD is layered on top only after the accelerator platform passes its own
+qualification gates. The consumer integration lives in:
 
-That repository consumes the public `ti-k3-*` APIs and does not own or
-warm-restart the TI remote processors.
+`ILAMtitan/openhd-k3-integration`
+
+That repository consumes the public `ti-k3-*` platform contract and does not
+own or warm-restart the TI remote processors.
