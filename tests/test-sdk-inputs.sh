@@ -12,6 +12,7 @@ header_lock="$root/inputs/ti-edgeai-development-headers.lock"
 firmware_manifest="$root/firmware/manifests/j722s-r2.env"
 firmware_builder="$root/firmware/scripts/build-j722s-r2.sh"
 ti_2a_builder="$root/scripts/build-ti-2a-provider-from-psdk.sh"
+ti_2a_compat="$root/armbian/userpatches/overlay/usr/local/sbin/ti-k3-build-tiovx-compat-plugin"
 
 extractor="$root/scripts/extract-ti-linux-rootfs.sh"
 userspace_importer="$root/scripts/import-ti-userspace-locked.sh"
@@ -28,6 +29,7 @@ for f in \
     "$firmware_manifest" \
     "$firmware_builder" \
     "$ti_2a_builder" \
+    "$ti_2a_compat" \
     "$extractor" \
     "$userspace_importer" \
     "$header_importer" \
@@ -158,18 +160,22 @@ awk -F '\t' '
 [[ -z "$(cut -f2 "$header_lock" | sort | uniq -d)" ]]
 
 #
-# Preparation must consume the locked inputs rather than a caller-provided
-# extracted rootfs.
+# Preparation must consume locked/public SDK inputs rather than caller-provided
+# extracted userspace or a historical TI 2A binary provider.
 #
 grep -Fq 'extract-ti-linux-rootfs.sh' "$prepare"
 grep -Fq 'import-ti-userspace-locked.sh' "$prepare"
 grep -Fq 'import-ti-edgeai-development-headers.sh' "$prepare"
+grep -Fq 'build-ti-2a-provider-from-psdk.sh' "$prepare"
 
 grep -Fq -- '--ti-rootfs-archive' "$prepare"
+grep -Fq -- '--ti-rtos-src' "$prepare"
 ! grep -Fq -- '--ti-rootfs)' "$prepare"
 
 grep -Fq 'TI_K3_WORKDIR_BASE' "$prepare"
 grep -Fq 'FORENSIC_HEADER_STAGING_SANITIZED=PASS' "$prepare"
+grep -Fq 'FORENSIC_TI_2A_STAGING_SANITIZED=PASS' "$prepare"
+grep -Fq 'ti-2a-provider-source' "$prepare"
 
 #
 # The historical 32-header copy is not authoritative anymore.
@@ -201,10 +207,9 @@ grep -Fq '"BUILD_LINUX_MPU=$BUILD_LINUX_MPU"' "$firmware_builder"
 grep -Fq 'SDK_ROOT_POLICY=caller-supplied' "$firmware_builder"
 
 #
-# A source-built TI 2A replacement lane now exists. Until that output is proven
-# and integrated, image customization still accepts the historical provider.
-# The new builder itself must not consume the historical reference tree or the
-# frozen provider hash.
+# The TI 2A provider must be built from the supplied PSDK RTOS imaging source,
+# staged separately from the frozen firmware bundle, and consumed from exactly
+# that build-only directory by the TIOVX compatibility build.
 #
 grep -Fq 'imaging/ti_2a_wrapper' "$ti_2a_builder"
 grep -Fq 'BUILD_LINUX_MPU=yes' "$ti_2a_builder"
@@ -214,6 +219,12 @@ grep -Fq 'TI_2A_wrapper_delete' "$ti_2a_builder"
 ! grep -Fq 'reference/r73341' "$ti_2a_builder"
 ! grep -Fq '4f7b2acf81511fc0dabf7f61b88b7a7574d153cab435c178b238ecc689e6c567' "$ti_2a_builder"
 
-grep -Fq 'ti-2a-wrapper-provider.env' "$customize"
+grep -Fq 'ti-2a-provider-source' "$customize"
+grep -Fq 'ti-2a-wrapper-source-build.env' "$customize"
+grep -Fq 'ti_2a_source_build=yes' "$customize"
+! grep -Fq 'mv /usr/lib/openhd-build-only/ti-2a' "$customize"
+
+grep -Fq 'TI_2A_SOURCE_DIR=/usr/lib/ti-k3-build-only/ti-2a' "$ti_2a_compat"
+grep -Fq 'TI_2A_PROVIDER=$("$ti_2a_helper" "$TI_2A_LINK_DIR" "$TI_2A_SOURCE_DIR")' "$ti_2a_compat"
 
 echo 'PASS: TI SDK source-input, firmware-source, 2A-source, and development-header contract'
