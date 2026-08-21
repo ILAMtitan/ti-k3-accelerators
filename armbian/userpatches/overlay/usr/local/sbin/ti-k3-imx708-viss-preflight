@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ -r /etc/ti-k3/gstreamer.env ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source /etc/ti-k3/gstreamer.env
+  set +a
+fi
+
+for cmd in gst-launch-1.0 gst-inspect-1.0 media-ctl v4l2-ctl ti-k3-configure-imx708-graph; do
+  command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
+done
+
+if command -v ti-k3-rpmsg-ready >/dev/null; then
+  ti-k3-rpmsg-ready --wait 5
+fi
+if command -v ti-k3-dma-heap-prepare >/dev/null; then
+  ti-k3-dma-heap-prepare
+fi
+
+gst-inspect-1.0 tiovxisp >/tmp/ti-k3-imx708-tiovxisp.inspect
+for element in v4l2src capssetter tiovxisp fpsdisplaysink fakesink; do
+  gst-inspect-1.0 "$element" >/dev/null || { echo "Missing GStreamer element: $element" >&2; exit 1; }
+done
+
+if ! grep -q 'SENSOR_SONY_IMX219_RPI' /tmp/ti-k3-imx708-tiovxisp.inspect; then
+  echo "Installed tiovxisp does not expose the expected compatibility sensor slot SENSOR_SONY_IMX219_RPI." >&2
+  exit 1
+fi
+if ! grep -q 'dcc-isp-file' /tmp/ti-k3-imx708-tiovxisp.inspect; then
+  echo "Installed tiovxisp does not expose dcc-isp-file." >&2
+  exit 1
+fi
+
+ti-k3-configure-imx708-graph --mode 1296p56
+source /run/ti-k3/camera.env
+
+for f in "$TI_K3_CAMERA_DCC_VISS" "$TI_K3_CAMERA_DCC_2A"; do
+  if [[ ! -s "$f" ]]; then
+    echo "Missing IMX708 bring-up DCC file: $f" >&2
+    echo "Generate with scripts/build-imx708-default-dcc.sh on x86_64, then copy both files into /opt/imaging/imx708/linear/." >&2
+    exit 3
+  fi
+done
+
+v4l2-ctl -d "$TI_K3_CAMERA_VIDEO_DEVICE" \
+  --stream-mmap=4 --stream-poll --stream-count=1 --stream-to=/dev/null >/dev/null
+
+gst-launch-1.0 -q \
+  v4l2src device="$TI_K3_CAMERA_VIDEO_DEVICE" io-mode=mmap num-buffers=1 ! \
+  "video/x-bayer,format=${TI_K3_CAMERA_GST_V4L2_BAYER_FORMAT},width=${TI_K3_CAMERA_WIDTH},height=${TI_K3_CAMERA_HEIGHT},framerate=${TI_K3_CAMERA_FPS}/1" ! \
+  fakesink sync=false
+
+echo "IMX708 VISS preflight PASS"
+echo "  raw:  ${TI_K3_CAMERA_VIDEO_DEVICE_REAL} ${TI_K3_CAMERA_WIDTH}x${TI_K3_CAMERA_HEIGHT}@${TI_K3_CAMERA_FPS} rggb10le"
+echo "  dcc:  $TI_K3_CAMERA_DCC_VISS"
+echo "  2a:   $TI_K3_CAMERA_DCC_2A"
+echo "  note: compatibility DCC slot 219; AE/AWB must remain disabled in r1"

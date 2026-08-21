@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ -r /etc/ti-k3/gstreamer.env ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source /etc/ti-k3/gstreamer.env
+  set +a
+fi
+
+FRAMES=${FRAMES:-560}
+GST_DEBUG_LEVEL=${GST_DEBUG_LEVEL:-2}
+
+if [[ $EUID -ne 0 ]]; then
+  echo "Run as root (sudo)." >&2
+  exit 1
+fi
+
+ti-k3-imx708-viss-preflight
+source /run/ti-k3/camera.env
+
+[[ "$TI_K3_CAMERA_MODE" == 1296p56 ]] || {
+  echo "r1 VISS smoke test is pinned to 1296p56 because DCC is resolution-specific." >&2
+  exit 1
+}
+
+echo "Starting IMX708 RAW10 -> VPAC/VISS -> NV12 smoke test (${FRAMES} frames)..."
+echo "AE/AWB are explicitly disabled; compatibility slot 219 is used only to satisfy the installed TI sensor/DCC registry."
+
+GST_DEBUG="$GST_DEBUG_LEVEL" gst-launch-1.0 -e \
+  v4l2src device="$TI_K3_CAMERA_VIDEO_DEVICE" io-mode=dmabuf-import do-timestamp=true num-buffers="$FRAMES" ! \
+  "video/x-bayer,format=${TI_K3_CAMERA_GST_V4L2_BAYER_FORMAT},width=${TI_K3_CAMERA_WIDTH},height=${TI_K3_CAMERA_HEIGHT},framerate=${TI_K3_CAMERA_FPS}/1" ! \
+  capssetter caps="video/x-bayer,format=${TI_K3_CAMERA_GST_TIOVX_BAYER_FORMAT}" join=true replace=false ! \
+  tiovxisp name=isp \
+    sensor-name="$TI_K3_CAMERA_DCC_COMPAT_SENSOR" \
+    dcc-isp-file="$TI_K3_CAMERA_DCC_VISS" \
+    format-msb="$TI_K3_CAMERA_FORMAT_MSB" \
+    bypass-cac=true \
+    bypass-dwb=true \
+    sink_0::dcc-2a-file="$TI_K3_CAMERA_DCC_2A" \
+    sink_0::device="$TI_K3_CAMERA_SUBDEV_DEVICE" \
+    sink_0::ae-mode=AE_MODE_DISABLED \
+    sink_0::awb-mode=AWB_MODE_DISABLED \
+    sink_0::pool-size=4 \
+    src::pool-size=4 ! \
+  "video/x-raw,format=NV12,width=${TI_K3_CAMERA_WIDTH},height=${TI_K3_CAMERA_HEIGHT},framerate=${TI_K3_CAMERA_FPS}/1" ! \
+  queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! \
+  fpsdisplaysink video-sink=fakesink text-overlay=false sync=false

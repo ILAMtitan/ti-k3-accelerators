@@ -1,0 +1,120 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * BeagleY-AI CSI0 + Arducam B0310 (Sony IMX708), 2-lane RAW10.
+ *
+ * Module profile:
+ *   sensor:           Sony IMX708
+ *   I2C:              0x1a on main_i2c2
+ *   input clock:      24 MHz
+ *   CSI-2 data lanes: 1, 2
+ *   link frequency:   450 MHz (900 Mb/s per lane DDR)
+ *   focus:            M12 manual focus; no VCM node
+ *
+ * This uses the same BeagleY-AI CSI0 I2C/reset routing as the current
+ * Armbian IMX219 CSI0 overlay: main_i2c2 and MCU_GPIO0_15.
+ */
+/dts-v1/;
+/plugin/;
+
+&{/} {
+	clk_b0310_csi0: b0310-csi0-inclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+	};
+};
+
+&mcu_pmx0 {
+	b0310_csi0_reset_pins_default: b0310-csi0-reset-default-pins {
+		/* J722S_MCU_IOPAD(0x003c, PIN_OUTPUT, 7) */
+		pinctrl-single,pins = <0x003c 0x00010007>;
+	};
+};
+
+&main_pmx0 {
+	b0310_csi0_i2c2_pins_default: b0310-csi0-i2c2-default-pins {
+		/*
+		 * J722S_IOPAD(0x00b0, PIN_INPUT_PULLUP, 1)
+		 * J722S_IOPAD(0x00b4, PIN_INPUT_PULLUP, 1)
+		 */
+		pinctrl-single,pins = <
+			0x00b0 0x00064001
+			0x00b4 0x00064001
+		>;
+	};
+};
+
+&mcu_gpio0 {
+	status = "okay";
+};
+
+&main_i2c2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&b0310_csi0_i2c2_pins_default>;
+	clock-frequency = <400000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	b0310_imx708: camera-sensor@1a {
+		compatible = "sony,imx708";
+		reg = <0x1a>;
+
+		clocks = <&clk_b0310_csi0>;
+		clock-names = "inclk";
+
+		/*
+		 * B0310 is a Raspberry-Pi-style camera module powered from the
+		 * connector's 3.3-V rail. The sensor driver models the internal
+		 * sensor rails separately; on this integrated module they all sit
+		 * behind the module's local power circuitry, so use the module's
+		 * 3.3-V input as the parent supply handle for all four requests.
+		 */
+		vana1-supply = <&vdd_3v3>;
+		vana2-supply = <&vdd_3v3>;
+		vdig-supply = <&vdd_3v3>;
+		vddl-supply = <&vdd_3v3>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&b0310_csi0_reset_pins_default>;
+		/* GPIO_ACTIVE_HIGH = 0; high enables/deasserts XCLR/power-enable. */
+		reset-gpios = <&mcu_gpio0 15 0>;
+
+		port {
+			b0310_imx708_out: endpoint {
+				remote-endpoint = <&csi2rx0_in_b0310>;
+				link-frequencies = /bits/ 64 <450000000>;
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+				clock-noncontinuous;
+			};
+		};
+	};
+};
+
+&cdns_csi2rx0 {
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			status = "okay";
+
+			csi2rx0_in_b0310: endpoint {
+				remote-endpoint = <&b0310_imx708_out>;
+				bus-type = <4>; /* V4L2_MBUS_CSI2_DPHY */
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+};
+
+&ti_csi2rx0 {
+	status = "okay";
+};
+
+&dphy0 {
+	status = "okay";
+};
