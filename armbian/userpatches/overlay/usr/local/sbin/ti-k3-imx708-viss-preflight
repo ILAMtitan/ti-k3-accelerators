@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+MODE=${IMX708_MODE:-864p60}
+
 if [[ -r /etc/ti-k3/gstreamer.env ]]; then
   set -a
   # shellcheck source=/dev/null
@@ -20,7 +22,7 @@ if command -v ti-k3-dma-heap-prepare >/dev/null; then
 fi
 
 gst-inspect-1.0 tiovxisp >/tmp/ti-k3-imx708-tiovxisp.inspect
-for element in v4l2src capssetter tiovxisp fpsdisplaysink fakesink; do
+for element in v4l2src capssetter tiovxisp tiovxmultiscaler fpsdisplaysink fakesink; do
   gst-inspect-1.0 "$element" >/dev/null || { echo "Missing GStreamer element: $element" >&2; exit 1; }
 done
 
@@ -33,13 +35,14 @@ if ! grep -q 'dcc-isp-file' /tmp/ti-k3-imx708-tiovxisp.inspect; then
   exit 1
 fi
 
-ti-k3-configure-imx708-graph --mode 1296p56
+ti-k3-configure-imx708-graph --mode "$MODE"
+# shellcheck source=/dev/null
 source /run/ti-k3/camera.env
 
 for f in "$TI_K3_CAMERA_DCC_VISS" "$TI_K3_CAMERA_DCC_2A"; do
   if [[ ! -s "$f" ]]; then
     echo "Missing IMX708 bring-up DCC file: $f" >&2
-    echo "Generate with scripts/build-imx708-default-dcc.sh on x86_64, then copy both files into /opt/imaging/imx708/linear/." >&2
+    echo "Generate the matching resolution with scripts/build-imx708-default-dcc.sh on x86_64, then copy both files into /opt/imaging/imx708/linear/." >&2
     exit 3
   fi
 done
@@ -53,7 +56,8 @@ gst-launch-1.0 -q \
   fakesink sync=false
 
 echo "IMX708 VISS preflight PASS"
+echo "  mode: $TI_K3_CAMERA_MODE"
 echo "  raw:  ${TI_K3_CAMERA_VIDEO_DEVICE_REAL} ${TI_K3_CAMERA_WIDTH}x${TI_K3_CAMERA_HEIGHT}@${TI_K3_CAMERA_FPS} rggb10le"
 echo "  dcc:  $TI_K3_CAMERA_DCC_VISS"
 echo "  2a:   $TI_K3_CAMERA_DCC_2A"
-echo "  note: compatibility DCC slot 219; AE/AWB must remain disabled in r1"
+echo "  note: compatibility DCC slot 219; AE/AWB remain disabled"
