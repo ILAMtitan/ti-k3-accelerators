@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+FRAMES=${FRAMES:-300}
+[[ "$FRAMES" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid FRAMES=$FRAMES" >&2; exit 2; }
+
+ti-k3-imx415-viss-preflight
+
+set -a
+source /etc/ti-k3/gstreamer.env
+source /run/ti-k3/camera.env
+set +a
+
+echo "Running IMX415 RAW10 -> VPAC/VISS -> NV12 smoke test for $FRAMES frames..."
+
+gst-launch-1.0 -e \
+  v4l2src device="$TI_K3_CAMERA_VIDEO_DEVICE" io-mode=dmabuf-import do-timestamp=true num-buffers="$FRAMES" \
+  ! video/x-bayer,format=gbrg10le,width=3864,height=2192,framerate=30/1 \
+  ! capssetter caps="video/x-bayer,format=gbrg10" join=true replace=false \
+  ! tiovxisp \
+      sensor-name=SENSOR_SONY_IMX219_RPI \
+      dcc-isp-file="$TI_K3_CAMERA_DCC_VISS" \
+      format-msb=9 \
+      bypass-cac=true \
+      bypass-dwb=true \
+      sink_0::dcc-2a-file="$TI_K3_CAMERA_DCC_2A" \
+      sink_0::device="$TI_K3_CAMERA_SUBDEV_DEVICE" \
+      sink_0::ae-mode=AE_MODE_DISABLED \
+      sink_0::awb-mode=AWB_MODE_DISABLED \
+      sink_0::pool-size=4 \
+      src::pool-size=4 \
+  ! video/x-raw,format=NV12,width=3864,height=2192,framerate=30/1 \
+  ! fakesink sync=false
+
+echo "IMX415 VISS smoke PASS."
