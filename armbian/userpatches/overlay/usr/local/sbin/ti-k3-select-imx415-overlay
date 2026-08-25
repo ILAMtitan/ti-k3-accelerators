@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ADDRESS=0x37
+BOOT_DIR=${TI_K3_BOOT_DIR:-/boot}
+
+usage() {
+  cat >&2 <<USAGE
+Usage: $0 [--address 0x37|0x1a]
+
+Select the provisional Arducam B0569 / IMX415 CSI0 overlay. Default 0x37
+matches the upstream Raspberry Pi IMX415 overlay default; live hardware wins.
+A reboot is required after changing the sensor overlay.
+USAGE
+  exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --address) ADDRESS=${2:?missing address}; shift 2 ;;
+    -h|--help) usage ;;
+    *) usage ;;
+  esac
+done
+
+case "$ADDRESS" in
+  0x37) SUFFIX=37 ;;
+  0x1a) SUFFIX=1a ;;
+  *) usage ;;
+esac
+
+NAME="k3-am67a-beagley-ai-csi0-arducam-b0569-imx415-${SUFFIX}.dtbo"
+
+for conf in "$BOOT_DIR/uEnv.txt" "$BOOT_DIR/firmware/uEnv.txt"; do
+  [[ -f "$conf" ]] || continue
+  root=${conf%/uEnv.txt}
+  camera=
+  for candidate in "ti/overlay/$NAME" "ti/$NAME" "$NAME"; do
+    [[ -e "${root}/dtb/${candidate}" ]] && { camera=$candidate; break; }
+  done
+  [[ -n "$camera" ]] || { echo "Overlay $NAME not found below ${root}/dtb" >&2; exit 1; }
+  backup="${conf}.bak.$(date +%Y%m%d-%H%M%S)"
+  cp -a "$conf" "$backup"
+  python3 - "$conf" "$camera" <<'PY'
+from pathlib import Path
+import re,sys
+p=Path(sys.argv[1]); camera=sys.argv[2]
+lines=p.read_text().splitlines()
+managed=re.compile(r'^(?:ti/(?:overlay/)?)?(?:k3-j722s-edgeai-apps|k3-am67a-beagley-ai-csi[01]-imx(?:219|708)|k3-am67a-beagley-ai-csi0-arducam-b0310|k3-am67a-beagley-ai-csi0-arducam-b0569-imx415-(?:37|1a))\.dtbo$')
+for i,line in enumerate(lines):
+    m=re.match(r'^\s*name_overlays\s*=\s*(.*)$',line)
+    if not m: continue
+    tokens=[t for t in m.group(1).split() if not managed.match(t)]
+    tokens.append(camera)
+    lines[i]='name_overlays='+' '.join(dict.fromkeys(tokens))
+    break
+else:
+    lines.append('name_overlays='+camera)
+p.write_text('\n'.join(lines)+'\n')
+PY
+  echo "Selected B0569 IMX415 $ADDRESS in $conf; reboot required. Backup: $backup"
+  exit 0
+done
+
+echo "R0 selector currently supports the BeagleY-AI uEnv boot scheme only." >&2
+exit 1

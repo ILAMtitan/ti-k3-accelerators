@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+for cmd in ti-k3-rpmsg-ready ti-k3-configure-imx415-graph gst-inspect-1.0 python3; do
+  command -v "$cmd" >/dev/null || { echo "Missing command: $cmd" >&2; exit 1; }
+done
+
+systemctl is-active --quiet ti-k3-accelerators.target || {
+  echo "ti-k3-accelerators.target is not active." >&2
+  exit 1
+}
+
+ti-k3-rpmsg-ready
+ti-k3-configure-imx415-graph
+
+[[ -s /opt/imaging/imx415/linear/dcc_viss_3864x2192.bin ]] || { echo "Missing IMX415 VISS DCC." >&2; exit 1; }
+[[ -s /opt/imaging/imx415/linear/dcc_2a_3864x2192.bin ]] || { echo "Missing IMX415 2A DCC." >&2; exit 1; }
+
+set -a
+source /etc/ti-k3/gstreamer.env
+set +a
+
+gst-inspect-1.0 tiovxisp >/dev/null
+gst-inspect-1.0 tiovxmultiscaler >/dev/null
+gst-inspect-1.0 capssetter >/dev/null
+
+# IMX708 R1's core compatibility rebuild intentionally added all four RAW10LE
+# Bayer aliases. Verify the GBRG alias needed by IMX415 before using VISS.
+python3 - <<'PY'
+import ctypes
+lib=ctypes.CDLL("libgsttiovx-1.0.so.1")
+fn=lib.gst_format_to_tivx_raw_format
+fn.argtypes=[ctypes.c_char_p]
+fn.restype=ctypes.c_int
+legacy=fn(b"gbrg10")
+modern=fn(b"gbrg10le")
+if legacy < 0 or modern != legacy:
+    raise SystemExit(f"GBRG10LE mapping failed: gbrg10={legacy} gbrg10le={modern}")
+print(f"GBRG10LE mapping PASS: gbrg10={legacy} gbrg10le={modern}")
+PY
+
+echo "IMX415 VISS preflight PASS (R0; hardware qualification still required)."
