@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-MODE=1296p56
+MODE=864p60
 VERIFY=no
-VERIFY_FRAMES=112
+VERIFY_FRAMES=120
 
 usage() {
   cat >&2 <<USAGE
-Usage: $0 [--mode 1296p56|864p120] [--verify-stream] [--verify-frames N]
+Usage: $0 [--mode 1296p56|864p60|864p120] [--verify-stream] [--verify-frames N]
 USAGE
   exit 2
 }
@@ -25,9 +25,15 @@ done
 case "$MODE" in
   1296p56)
     WIDTH=2304; HEIGHT=1296; FPS=56; VBLANK=40
+    DCC_WIDTH=2304; DCC_HEIGHT=1296
+    ;;
+  864p60)
+    WIDTH=1536; HEIGHT=864; FPS=60; VBLANK=946
+    DCC_WIDTH=1536; DCC_HEIGHT=864
     ;;
   864p120)
     WIDTH=1536; HEIGHT=864; FPS=120; VBLANK=40
+    DCC_WIDTH=1536; DCC_HEIGHT=864
     ;;
   *) echo "Unsupported mode: $MODE" >&2; usage ;;
 esac
@@ -78,7 +84,9 @@ VIDEO_DEV=$(entity_dev "$CTX_ENTITY")
 BAYER_MBUS=SRGGB10_1X10
 BAYER_V4L2=RG10
 
-# Configure the exact graph qualified on BeagleY-AI CSI0.
+# Configure the exact CSI0 graph. For 864p60, VBLANK=946 gives 59.9939 fps
+# from the driver's 566.4 MHz pixel rate and 0x1460 line length. Producing
+# ~60 fps in the sensor avoids a 120->60 software frame-drop stage.
 media-ctl -d "$MEDIA" --set-v4l2 "\"$SENSOR_ENTITY\":0[fmt:${BAYER_MBUS}/${WIDTH}x${HEIGHT}]"
 media-ctl -d "$MEDIA" --set-v4l2 "\"$BRIDGE_ENTITY\":0[fmt:${BAYER_MBUS}/${WIDTH}x${HEIGHT}]"
 media-ctl -d "$MEDIA" --set-v4l2 "\"$BRIDGE_ENTITY\":1[fmt:${BAYER_MBUS}/${WIDTH}x${HEIGHT}]"
@@ -113,12 +121,12 @@ TI_K3_CAMERA_GST_TIOVX_BAYER_FORMAT=rggb10
 TI_K3_CAMERA_FORMAT_MSB=9
 TI_K3_CAMERA_DCC_COMPAT_SENSOR=SENSOR_SONY_IMX219_RPI
 TI_K3_CAMERA_DCC_COMPAT_ID=219
-TI_K3_CAMERA_DCC_VISS=/opt/imaging/imx708/linear/dcc_viss_2304x1296.bin
-TI_K3_CAMERA_DCC_2A=/opt/imaging/imx708/linear/dcc_2a_2304x1296.bin
+TI_K3_CAMERA_DCC_VISS=/opt/imaging/imx708/linear/dcc_viss_${DCC_WIDTH}x${DCC_HEIGHT}.bin
+TI_K3_CAMERA_DCC_2A=/opt/imaging/imx708/linear/dcc_2a_${DCC_WIDTH}x${DCC_HEIGHT}.bin
 ENV
 
-printf 'IMX708 graph configured: media=%s sensor=%s video=%s mode=%s %sx%s@%s RAW10\n' \
-  "$MEDIA" "$SENSOR_DEV" "$VIDEO_DEV" "$MODE" "$WIDTH" "$HEIGHT" "$FPS"
+printf 'IMX708 graph configured: media=%s sensor=%s video=%s mode=%s %sx%s@%s RAW10 vblank=%s\n' \
+  "$MEDIA" "$SENSOR_DEV" "$VIDEO_DEV" "$MODE" "$WIDTH" "$HEIGHT" "$FPS" "$VBLANK"
 
 if [[ "$VERIFY" == yes ]]; then
   echo "Verifying RAW10 streaming for ${VERIFY_FRAMES} frames..."
