@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * BeagleY-AI CSI0 + Arducam B0569 (Sony IMX415), provisional R0.
+ *
+ * Intended fast-path profile:
+ *   sensor:           Sony IMX415
+ *   I2C:              0x37 on main_i2c2 (verify on hardware)
+ *   input clock:      24 MHz
+ *   CSI-2 data lanes: 1, 2
+ *   link frequency:   720 MHz (1.44 Gb/s per lane DDR)
+ *   sensor output:    3864x2192 SGBRG10, about 30 fps
+ *
+ * The exact v6.12.49-ti-arm64-r56 driver supports the 2-lane 1.44-Gb/s
+ * mode with 24-MHz INCK. reset-gpios is intentionally omitted in R0 because
+ * reset is optional in the driver and B0569 connector/XCLR wiring is not yet
+ * verified on BeagleY-AI.
+ *
+ * The three sensor supply requests are provisionally parented to the camera
+ * connector 3.3-V rail, assuming B0569 provides local sensor regulation.
+ * Verify that module-level power assumption before R1 qualification.
+ */
+/dts-v1/;
+/plugin/;
+
+&{/} {
+	clk_b0569_csi0_37: b0569-csi0-37-inclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+	};
+};
+
+&main_pmx0 {
+	b0569_csi0_37_i2c2_pins_default: b0569-csi0-37-i2c2-default-pins {
+		pinctrl-single,pins = <
+			0x00b0 0x00064001
+			0x00b4 0x00064001
+		>;
+	};
+};
+
+&main_i2c2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&b0569_csi0_37_i2c2_pins_default>;
+	clock-frequency = <400000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	b0569_imx415_37: camera-sensor@37 {
+		compatible = "sony,imx415";
+		reg = <0x37>;
+
+		clocks = <&clk_b0569_csi0_37>;
+		clock-names = "inck";
+
+		avdd-supply = <&vdd_3v3>;
+		dvdd-supply = <&vdd_3v3>;
+		ovdd-supply = <&vdd_3v3>;
+
+		port {
+			b0569_imx415_37_out: endpoint {
+				remote-endpoint = <&csi2rx0_in_b0569_37>;
+				link-frequencies = /bits/ 64 <720000000>;
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+};
+
+&cdns_csi2rx0 {
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			status = "okay";
+
+			csi2rx0_in_b0569_37: endpoint {
+				remote-endpoint = <&b0569_imx415_37_out>;
+				bus-type = <4>;
+				clock-lanes = <0>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+};
+
+&ti_csi2rx0 {
+	status = "okay";
+};
+
+&dphy0 {
+	status = "okay";
+};
