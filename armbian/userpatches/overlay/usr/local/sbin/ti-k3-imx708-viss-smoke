@@ -8,8 +8,10 @@ if [[ -r /etc/ti-k3/gstreamer.env ]]; then
   set +a
 fi
 
-FRAMES=${FRAMES:-560}
+FRAMES=${FRAMES:-600}
 GST_DEBUG_LEVEL=${GST_DEBUG_LEVEL:-2}
+IMX708_MODE=${IMX708_MODE:-864p60}
+export IMX708_MODE
 
 if [[ $EUID -ne 0 ]]; then
   echo "Run as root (sudo)." >&2
@@ -17,14 +19,15 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 ti-k3-imx708-viss-preflight
+# shellcheck source=/dev/null
 source /run/ti-k3/camera.env
 
-[[ "$TI_K3_CAMERA_MODE" == 1296p56 ]] || {
-  echo "r1 VISS smoke test is pinned to 1296p56 because DCC is resolution-specific." >&2
+[[ "$TI_K3_CAMERA_MODE" == 864p60 ]] || {
+  echo "720p60 R2 VISS smoke test is pinned to 864p60 because DCC is resolution-specific." >&2
   exit 1
 }
 
-echo "Starting IMX708 RAW10 -> VPAC/VISS -> NV12 smoke test (${FRAMES} frames)..."
+echo "Starting IMX708 RAW10 -> VPAC/VISS -> NV12 smoke test (${FRAMES} frames at 1536x864p60)..."
 echo "AE/AWB are explicitly disabled; compatibility slot 219 is used only to satisfy the installed TI sensor/DCC registry."
 
 GST_DEBUG="$GST_DEBUG_LEVEL" gst-launch-1.0 -e \
