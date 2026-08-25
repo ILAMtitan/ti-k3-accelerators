@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+FRAMES=${FRAMES:-300}
+OUT=${OUT:-/tmp/imx415-viss-wave5-720p30.h264}
+BITRATE=${BITRATE:-6000000}
+GOP=${GOP:-15}
+
+[[ "$FRAMES" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid FRAMES=$FRAMES" >&2; exit 2; }
+[[ "$BITRATE" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid BITRATE=$BITRATE" >&2; exit 2; }
+[[ "$GOP" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid GOP=$GOP" >&2; exit 2; }
+
+ti-k3-imx415-viss-preflight
+
+set -a
+source /etc/ti-k3/gstreamer.env
+source /run/ti-k3/camera.env
+set +a
+
+rm -f "$OUT"
+
+echo "Running IMX415 -> VISS -> multiscaler 720p30 -> Wave5 H.264 for $FRAMES frames..."
+
+gst-launch-1.0 -e \
+  v4l2src device="$TI_K3_CAMERA_VIDEO_DEVICE" io-mode=dmabuf-import do-timestamp=true num-buffers="$FRAMES" \
+  ! video/x-bayer,format=gbrg10le,width=3864,height=2192,framerate=30/1 \
+  ! capssetter caps="video/x-bayer,format=gbrg10" join=true replace=false \
+  ! tiovxisp \
+      sensor-name=SENSOR_SONY_IMX219_RPI \
+      dcc-isp-file="$TI_K3_CAMERA_DCC_VISS" \
+      format-msb=9 \
+      bypass-cac=true \
+      bypass-dwb=true \
+      sink_0::dcc-2a-file="$TI_K3_CAMERA_DCC_2A" \
+      sink_0::device="$TI_K3_CAMERA_SUBDEV_DEVICE" \
+      sink_0::ae-mode=AE_MODE_DISABLED \
+      sink_0::awb-mode=AWB_MODE_DISABLED \
+      sink_0::pool-size=4 \
+      src::pool-size=4 \
+  ! video/x-raw,format=NV12,width=3864,height=2192,framerate=30/1 \
+  ! tiovxmultiscaler target=0 \
+  ! video/x-raw,format=NV12,width=1280,height=720,framerate=30/1 \
+  ! queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream \
+  ! v4l2h264enc \
+      extra-controls="controls,frame_level_rate_control_enable=1,video_bitrate=${BITRATE},video_gop_size=${GOP},h264_level=9,h264_profile=0,prepend_sps_and_pps_to_idr=1" \
+  ! video/x-h264,stream-format=byte-stream,alignment=au \
+  ! h264parse \
+  ! filesink location="$OUT" sync=false
+
+[[ -s "$OUT" ]] || { echo "Wave5 output missing/empty: $OUT" >&2; exit 1; }
+
+ls -lh "$OUT"
+sha256sum "$OUT"
+echo "IMX415 VISS -> 720p30 -> Wave5 smoke PASS: $OUT"
