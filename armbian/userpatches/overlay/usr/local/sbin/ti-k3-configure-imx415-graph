@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+VERIFY=no
+VERIFY_FRAMES=300
+ALLOW_RATE_MISMATCH=no
+
+usage() {
+  cat >&2 <<USAGE
+Usage: $0 [--verify-stream] [--verify-frames N] [--allow-rate-mismatch]
+
+Configures the provisional BeagleY-AI CSI0 IMX415 full-array fast path:
+  3864x2192 SGBRG10, expected ~30 fps.
+
+Frame rate is selected by the device-tree link frequency at probe time. R0
+expects the 2-lane 24-MHz / 720-MHz-link configuration.
+USAGE
+  exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --verify-stream) VERIFY=yes; shift ;;
+    --verify-frames) VERIFY_FRAMES=${2:?missing frame count}; shift 2 ;;
+    --allow-rate-mismatch) ALLOW_RATE_MISMATCH=yes; shift ;;
+    -h|--help) usage ;;
+    *) usage ;;
+  esac
+done
+
+[[ "$VERIFY_FRAMES" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid frame count: $VERIFY_FRAMES" >&2; exit 2; }
+
+for cmd in media-ctl v4l2-ctl grep sed ln mkdir awk; do
+  command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
+done
+
+find_media_and_sensor() {
+  local m line entity
+  for m in /dev/media*; do
+    [[ -e "$m" ]] || continue
+    line=$(media-ctl -d "$m" -p 2>/dev/null | grep -m1 -E 'entity [0-9]+: imx415( |$)' || true)
+    [[ -n "$line" ]] || continue
+    entity=$(sed -E 's/^[[:space:]]*entity [0-9]+: (.*) \([0-9]+ pad.*/\1/' <<<"$line")
+    [[ -n "$entity" ]] || continue
+    printf '%s\t%s\n' "$m" "$entity"
+    return 0
+  done
+  return 1
+}
+
+entity_dev() {
+  local entity=$1
+  media-ctl -d "$MEDIA" -e "$entity" 2>/dev/null | tail -n1
+}
+
+IFS=$'\t' read -r MEDIA SENSOR_ENTITY < <(find_media_and_sensor) || {
+  echo "No media graph containing an IMX415 sensor was found." >&2
+  exit 1
+}
+
+BRIDGE_ENTITY=cdns_csi2rx.30101000.csi-bridge
+CSI_ENTITY=30102000.ticsi2rx
+CTX_ENTITY='30102000.ticsi2rx context 0'
+
+SENSOR_DEV=$(entity_dev "$SENSOR_ENTITY")
+VIDEO_DEV=$(entity_dev "$CTX_ENTITY")
+
+[[ "$SENSOR_DEV" == /dev/v4l-subdev* && -e "$SENSOR_DEV" ]] || {
+  echo "Could not resolve IMX415 sensor subdev from $MEDIA (entity='$SENSOR_ENTITY', dev='$SENSOR_DEV')." >&2
+  exit 1
+}
+[[ "$VIDEO_DEV" == /dev/video* && -e "$VIDEO_DEV" ]] || {
+  echo "Could not resolve TI CSI2RX context 0 video node from $MEDIA (got '$VIDEO_DEV')." >&2
+  exit 1
+}
+
+WIDTH=3864
+HEIGHT=2192
+FPS=30
+BAYER_MBUS=SGBRG10_1X10
+BAYER_V4L2=GB10
+
+# Exact Beagle 6.12.49 driver value for the 2-lane 1.44-Gb/s mode
+# (~30.019 fps). Reject the lower-rate mode so a wrong DT link frequency does
+# not silently enter OpenHD.
+PIXEL_RATE=$(v4l2-ctl -d "$SENSOR_DEV" --get-ctrl=pixel_rate 2>/dev/null |
+  sed -n 's/.*pixel_rate:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | tail -n1)
+
+if [[ "$PIXEL_RATE" != 304615385 ]]; then
+  if [[ "$ALLOW_RATE_MISMATCH" != yes ]]; then
+    echo "Unexpected IMX415 pixel_rate='$PIXEL_RATE'; expected 304615385 for the 2-lane ~30-fps mode." >&2
+    echo "Use --allow-rate-mismatch only for diagnostics." >&2
+    exit 1
+  fi
+  echo "WARNING: accepting unqualified IMX415 pixel_rate='$PIXEL_RATE'." >&2
+fi
+
+media-ctl -d "$MEDIA" --set-v4l2 "\"$SENSOR_ENTITY\":0[fmt:${BAYER_MBUS}/${WIDTH}x${HEIGHT}]"
+media-ctl -d "$MEDIA" --set-v4l2 "\"$BRIDGE_ENTITY\":0[fmt:${BAYER_MBUS}/${WIDTH}x${HEIGHT}]"
+media-ctl -d "$MEDIA" --set-v4l2 "\"$BRIDGE_ENTITY\":1[fmt:${BAYER_MBUS}/${WIDTH}x${HEIGHT}]"
+media-ctl -d "$MEDIA" --set-v4l2 "\"$CSI_ENTITY\":0[fmt:${BAYER_MBUS}/${WIDTH}x${HEIGHT}]"
+media-ctl -d "$MEDIA" --set-v4l2 "\"$CSI_ENTITY\":1[fmt:${BAYER_MBUS}/${WIDTH}x${HEIGHT}]"
+
+v4l2-ctl -d "$VIDEO_DEV" --set-fmt-video="width=${WIDTH},height=${HEIGHT},pixelformat=${BAYER_V4L2}" >/dev/null
+
+mkdir -p /run/ti-k3
+ln -sfn "$VIDEO_DEV" /run/ti-k3/camera-video
+ln -sfn "$SENSOR_DEV" /run/ti-k3/camera-subdev
+
+cat > /run/ti-k3/camera.env <<ENV
+TI_K3_CAMERA_DETECTED_SENSOR=imx415
+TI_K3_CAMERA_SKU=arducam-b0569
+TI_K3_CAMERA_MEDIA_DEVICE=$MEDIA
+TI_K3_CAMERA_VIDEO_DEVICE=/run/ti-k3/camera-video
+TI_K3_CAMERA_VIDEO_DEVICE_REAL=$VIDEO_DEV
+TI_K3_CAMERA_SUBDEV_DEVICE=/run/ti-k3/camera-subdev
+TI_K3_CAMERA_SUBDEV_DEVICE_REAL=$SENSOR_DEV
+TI_K3_CAMERA_MODE=full30-r0
+TI_K3_CAMERA_WIDTH=$WIDTH
+TI_K3_CAMERA_HEIGHT=$HEIGHT
+TI_K3_CAMERA_FPS=$FPS
+TI_K3_CAMERA_PIXEL_RATE=$PIXEL_RATE
+TI_K3_CAMERA_MBUS_FORMAT=$BAYER_MBUS
+TI_K3_CAMERA_V4L2_FORMAT=$BAYER_V4L2
+TI_K3_CAMERA_GST_BAYER_FORMAT=gbrg10le
+TI_K3_CAMERA_GST_V4L2_BAYER_FORMAT=gbrg10le
+TI_K3_CAMERA_GST_TIOVX_BAYER_FORMAT=gbrg10
+TI_K3_CAMERA_FORMAT_MSB=9
+TI_K3_CAMERA_DCC_COMPAT_SENSOR=SENSOR_SONY_IMX219_RPI
+TI_K3_CAMERA_DCC_COMPAT_ID=219
+TI_K3_CAMERA_DCC_VISS=/opt/imaging/imx415/linear/dcc_viss_3864x2192.bin
+TI_K3_CAMERA_DCC_2A=/opt/imaging/imx415/linear/dcc_2a_3864x2192.bin
+ENV
+
+printf 'IMX415 graph configured: media=%s sensor="%s" subdev=%s video=%s %sx%s@~%s SGBRG10 pixel_rate=%s\n' \
+  "$MEDIA" "$SENSOR_ENTITY" "$SENSOR_DEV" "$VIDEO_DEV" "$WIDTH" "$HEIGHT" "$FPS" "$PIXEL_RATE"
+
+if [[ "$VERIFY" == yes ]]; then
+  echo "Verifying RAW10 streaming for ${VERIFY_FRAMES} frames..."
+  v4l2-ctl -d "$VIDEO_DEV" \
+    --stream-mmap=6 \
+    --stream-poll \
+    --stream-count="$VERIFY_FRAMES" \
+    --stream-to=/dev/null
+fi
