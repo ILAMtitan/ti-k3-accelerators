@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ILAMtitan <bbasile@gmail.com>
+Date: Wed, 26 Aug 2026 10:30:00 -0500
+Subject: [PATCH] v4l2object: size encoded buffers from negotiated geometry
+
+Backport the functional TI meta-arago CMA exhaustion fix to the Ubuntu Noble
+GStreamer 1.24.2 source used by the BeagleY-AI OpenHD checkpoint.
+
+Wave5 advertises very large maximum codec dimensions. GStreamer's encoded
+V4L2 sizeimage calculation used those maximum dimensions, which caused a
+33,554,432-byte allocation request for the 1280x720 H.264 encoder path.
+Use the already negotiated stream width and height instead.
+
+This intentionally leaves the max_width/max_height probing fields in place;
+only the encoded sizeimage calculation changes.
+---
+ sys/v4l2/gstv4l2object.c | 18 +++++++-----------
+ 1 file changed, 7 insertions(+), 11 deletions(-)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3897,14 +3897,10 @@ field_to_str (enum v4l2_field f)
+ }
+ 
+ static guint
+-calculate_max_sizeimage (GstV4l2Object * v4l2object, guint pixel_bitdepth)
++calculate_encoded_sizeimage (guint width, guint height, guint pixel_bitdepth)
+ {
+-  guint max_width, max_height;
+   guint sizeimage;
+ 
+-  max_width = v4l2object->max_width;
+-  max_height = v4l2object->max_height;
+-  sizeimage = max_width * max_height * pixel_bitdepth / 8 / 2;
++  sizeimage = width * height * pixel_bitdepth / 8 / 2;
+ 
+   return MAX (ENCODED_BUFFER_MIN_SIZE, sizeimage);
+ }
+@@ -4170,7 +4166,7 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
+ 
+     if (GST_VIDEO_INFO_FORMAT (&info.vinfo) == GST_VIDEO_FORMAT_ENCODED)
+       format.fmt.pix_mp.plane_fmt[0].sizeimage =
+-          calculate_max_sizeimage (v4l2object, pixel_bitdepth);
++          calculate_encoded_sizeimage (width, height, pixel_bitdepth);
+   } else {
+     gint stride = GST_VIDEO_INFO_PLANE_STRIDE (&info.vinfo, 0);
+ 
+@@ -4190,7 +4186,7 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
+ 
+     if (GST_VIDEO_INFO_FORMAT (&info.vinfo) == GST_VIDEO_FORMAT_ENCODED)
+       format.fmt.pix.sizeimage =
+-          calculate_max_sizeimage (v4l2object, pixel_bitdepth);
++          calculate_encoded_sizeimage (width, height, pixel_bitdepth);
+   }
+ 
+   GST_DEBUG_OBJECT (v4l2object->dbg_obj, "Desired format is %dx%d, format "
+-- 
+2.53.0

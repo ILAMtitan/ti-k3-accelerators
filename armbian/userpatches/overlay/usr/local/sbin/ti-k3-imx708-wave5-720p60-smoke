@@ -37,7 +37,7 @@ done
 
 rm -f "$OUT"
 
-echo "Running IMX708 1536x864p60 -> VISS -> multiscaler 1280x720p60 -> Wave5 H.264..."
+echo "Running IMX708 1536x864p60 -> VISS pool2 -> multiscaler 1280x720p60 -> Wave5 H.264 Baseline L3.2..."
 
 GST_DEBUG=${GST_DEBUG_LEVEL:-2} gst-launch-1.0 -e \
   v4l2src device="$TI_K3_CAMERA_VIDEO_DEVICE" io-mode=dmabuf-import do-timestamp=true num-buffers="$FRAMES" ! \
@@ -53,15 +53,15 @@ GST_DEBUG=${GST_DEBUG_LEVEL:-2} gst-launch-1.0 -e \
     sink_0::device="$TI_K3_CAMERA_SUBDEV_DEVICE" \
     sink_0::ae-mode=AE_MODE_DISABLED \
     sink_0::awb-mode=AWB_MODE_DISABLED \
-    sink_0::pool-size=4 \
-    src::pool-size=4 ! \
+    sink_0::pool-size=2 \
+    src::pool-size=2 ! \
   video/x-raw,format=NV12,width=1536,height=864,framerate=60/1 ! \
   tiovxmultiscaler target=0 ! \
   video/x-raw,format=NV12,width=1280,height=720,framerate=60/1 ! \
   queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! \
   v4l2h264enc \
     extra-controls="controls,frame_level_rate_control_enable=1,video_bitrate=${BITRATE},video_gop_size=${GOP},prepend_sps_and_pps_to_idr=1" ! \
-  video/x-h264,stream-format=byte-stream,alignment=au ! \
+  "video/x-h264,width=1280,height=720,framerate=60/1,profile=(string)baseline,level=(string)3.2,stream-format=(string)byte-stream,alignment=(string)au" ! \
   h264parse ! \
   filesink location="$OUT" sync=false
 
