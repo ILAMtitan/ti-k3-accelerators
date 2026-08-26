@@ -17,7 +17,7 @@ STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 die(){ echo "ERROR: $*" >&2; exit 1; }
 say(){ printf '\n=== %s ===\n' "$*"; }
 
-for cmd in apt-get dpkg-query dpkg-buildpackage dpkg-deb patch find gst-inspect-1.0 sha256sum; do
+for cmd in apt-get dpkg dpkg-query dpkg-buildpackage dpkg-deb patch find gst-inspect-1.0 sha256sum; do
   command -v "$cmd" >/dev/null || die "Missing command: $cmd"
 done
 [[ -s "$PATCH" ]] || die "Missing patch: $PATCH"
