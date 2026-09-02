@@ -1,19 +1,125 @@
 #!/usr/bin/env bash
-set -euo pipefail
-mkdir -p /run/ti-k3
-{
-  echo "# Generated $(date -Is)"
-  for node in /sys/class/video4linux/*; do
-    [[ -e "${node}/name" ]] || continue
-    dev=/dev/$(basename "${node}")
-    printf '%s\t%s\n' "${dev}" "$(cat "${node}/name")"
+set -Eeuo pipefail
+
+sensor=auto
+verify=no
+verify_frames=${TI_K3_CAMERA_VERIFY_FRAMES:-4}
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: ti-k3-camera-setup [--sensor auto|imx219|imx708|imx415]
+                          [--verify-stream] [--verify-frames N]
+
+Configures the active BeagleY-AI camera media graph and publishes the common
+/run/ti-k3 camera contract used by OpenHD.
+USAGE
+  exit 2
+}
+
+detect_sensor() {
+  local node name match found=""
+  for node in /sys/class/video4linux/v4l-subdev*; do
+    [[ -r "$node/name" ]] || continue
+    name=$(tr '[:upper:]' '[:lower:]' < "$node/name")
+    match=""
+    case "$name" in
+      *imx219*) match=imx219 ;;
+      *imx708*) match=imx708 ;;
+      *imx415*) match=imx415 ;;
+    esac
+    [[ -n "$match" ]] || continue
+    if [[ -n "$found" && "$found" != "$match" ]]; then
+      echo "Multiple supported camera sensors are active: $found and $match" >&2
+      return 2
+    fi
+    found=$match
   done
-} > /run/ti-k3/video-nodes.txt
-media-ctl -p > /run/ti-k3/media-topology.txt 2>&1 || true
-v4l2-ctl --list-devices > /run/ti-k3/v4l2-devices.txt 2>&1 || true
-if /usr/local/sbin/ti-k3-find-camera-devices --sensor imx219 --write-env >/run/ti-k3/camera-detection.txt 2>&1; then
-  cat /run/ti-k3/camera-detection.txt
-else
-  rm -f /run/ti-k3/camera.env /run/ti-k3/camera-video /run/ti-k3/camera-subdev
-  echo "No supported CSI camera detected; topology written under /run/ti-k3"
-fi
+  [[ -n "$found" ]] || return 1
+  printf '%s\n' "$found"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sensor) sensor=${2:?missing sensor}; shift 2 ;;
+    --verify-stream) verify=yes; shift ;;
+    --verify-frames) verify_frames=${2:?missing frame count}; shift 2 ;;
+    -h|--help) usage ;;
+    *) usage ;;
+  esac
+done
+
+[[ "$verify_frames" =~ ^[1-9][0-9]*$ ]] || {
+  echo "Invalid verify frame count: $verify_frames" >&2
+  exit 2
+}
+
+case "$sensor" in
+  auto)
+    sensor=$(detect_sensor) || {
+      rc=$?
+      [[ $rc -eq 2 ]] || echo 'No supported IMX219/IMX708/IMX415 sensor is active.' >&2
+      exit 1
+    }
+    ;;
+  imx219|imx708|imx415) ;;
+  *) usage ;;
+esac
+
+mkdir -p /run/ti-k3
+
+case "$sensor" in
+  imx219)
+    command -v ti-k3-find-camera-devices >/dev/null
+    command -v ti-k3-configure-imx219-graph >/dev/null
+    if command -v beagle-camera-setup >/dev/null 2>&1; then
+      beagle-camera-setup || true
+    fi
+    ti-k3-find-camera-devices --sensor imx219 --write-env \
+      > /run/ti-k3/camera-detection.txt
+    if [[ "$verify" == yes ]]; then
+      ti-k3-configure-imx219-graph --verify-stream
+    else
+      ti-k3-configure-imx219-graph
+    fi
+    ;;
+  imx708)
+    command -v ti-k3-configure-imx708-graph >/dev/null
+    mode=${TI_K3_IMX708_MODE:-864p60}
+    args=(--mode "$mode")
+    if [[ "$verify" == yes ]]; then
+      args+=(--verify-stream --verify-frames "$verify_frames")
+    fi
+    ti-k3-configure-imx708-graph "${args[@]}"
+    ;;
+  imx415)
+    command -v ti-k3-configure-imx415-graph >/dev/null
+    args=()
+    if [[ "$verify" == yes ]]; then
+      args+=(--verify-stream --verify-frames "$verify_frames")
+    fi
+    ti-k3-configure-imx415-graph "${args[@]}"
+    ;;
+esac
+
+[[ -r /run/ti-k3/camera.env ]] || {
+  echo 'Camera graph did not publish /run/ti-k3/camera.env' >&2
+  exit 1
+}
+[[ -e /run/ti-k3/camera-video ]] || {
+  echo 'Camera graph did not publish /run/ti-k3/camera-video' >&2
+  exit 1
+}
+[[ -e /run/ti-k3/camera-subdev ]] || {
+  echo 'Camera graph did not publish /run/ti-k3/camera-subdev' >&2
+  exit 1
+}
+
+detected=$(sed -n 's/^TI_K3_CAMERA_DETECTED_SENSOR=//p' /run/ti-k3/camera.env | tail -n1)
+[[ "$detected" == "$sensor" ]] || {
+  echo "Camera contract mismatch: requested=$sensor detected=${detected:-none}" >&2
+  exit 1
+}
+
+printf 'TI K3 camera setup complete: sensor=%s video=%s subdev=%s\n' \
+  "$sensor" "$(readlink -f /run/ti-k3/camera-video)" \
+  "$(readlink -f /run/ti-k3/camera-subdev)"

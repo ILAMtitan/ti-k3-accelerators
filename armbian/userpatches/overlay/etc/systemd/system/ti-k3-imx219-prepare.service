@@ -1,14 +1,9 @@
 [Unit]
-Description=Prepare IMX219 through TI K3 imaging accelerators
-After=ti-k3-remoteproc-prepare.service ti-k3-remote-log.service
-Requires=ti-k3-remoteproc-prepare.service
-Wants=ti-k3-remote-log.service
+Description=Legacy TI K3 camera-prepare compatibility alias
+Requires=ti-k3-camera-prepare.service
+After=ti-k3-camera-prepare.service
 
 [Service]
 Type=oneshot
-EnvironmentFile=-/etc/ti-k3/accelerators.env
-EnvironmentFile=-/etc/ti-k3/gstreamer.env
-Environment="TI_K3_CAMERA_MODE=imx219-ti-isp"
-ExecStart=/usr/local/sbin/ti-k3-persistent-run imx219-prepare /usr/local/sbin/ti-k3-imaging-prepare
+ExecStart=/usr/bin/true
 RemainAfterExit=yes
-TimeoutStartSec=90

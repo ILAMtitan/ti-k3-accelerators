@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG_FILE=${TI_K3_CAMERA_CONFIG_FILE:-/etc/ti-k3/camera.conf}
+VERIFY=${TI_K3_CAMERA_PREPARE_VERIFY:-yes}
+VERIFY_FRAMES=${TI_K3_CAMERA_VERIFY_FRAMES:-4}
+
+selected=auto
+if [[ -r "$CONFIG_FILE" ]]; then
+  source "$CONFIG_FILE"
+  selected=${TI_K3_CAMERA_SELECTED:-auto}
+fi
+case "$selected" in
+  auto|imx219|imx708|imx415) ;;
+  *) echo "Unsupported camera selection in $CONFIG_FILE: $selected" >&2; exit 2 ;;
+esac
+
+probe_active_sensor() {
+  local node name match found=""
+  for node in /sys/class/video4linux/v4l-subdev*; do
+    [[ -r "$node/name" ]] || continue
+    name=$(tr '[:upper:]' '[:lower:]' < "$node/name")
+    match=""
+    case "$name" in
+      *imx219*) match=imx219 ;;
+      *imx708*) match=imx708 ;;
+      *imx415*) match=imx415 ;;
+    esac
+    [[ -n "$match" ]] || continue
+    if [[ -n "$found" && "$found" != "$match" ]]; then
+      echo "Multiple supported camera sensors are active: $found and $match" >&2
+      return 2
+    fi
+    found=$match
+  done
+  [[ -n "$found" ]] || return 1
+  printf '%s\n' "$found"
+}
+
+if [[ "$selected" != auto ]]; then
+  active_before=$(probe_active_sensor 2>/dev/null || true)
+  if [[ -n "$active_before" && "$active_before" != "$selected" ]]; then
+    echo "Configured camera '$selected' does not match active sensor '$active_before'." >&2
+    echo 'The selected device-tree overlay has not taken effect; reboot is required.' >&2
+    exit 1
+  fi
+fi
+
+for cmd in ti-k3-rpmsg-ready ti-k3-dma-heap-prepare ti-k3-camera-setup; do
+  command -v "$cmd" >/dev/null || {
+    echo "Missing TI K3 camera dependency: $cmd" >&2
+    exit 1
+  }
+done
+
+ti-k3-rpmsg-ready --wait "${TI_K3_RPMSG_READY_TIMEOUT_SECONDS:-10}"
+ti-k3-dma-heap-prepare
+
+args=(--sensor "$selected")
+if [[ "$VERIFY" == yes ]]; then
+  args+=(--verify-stream --verify-frames "$VERIFY_FRAMES")
+fi
+ti-k3-camera-setup "${args[@]}"
+
+[[ -r /run/ti-k3/camera.env ]] || {
+  echo 'Missing /run/ti-k3/camera.env after camera setup' >&2
+  exit 1
+}
+source /run/ti-k3/camera.env
+
+detected=${TI_K3_CAMERA_DETECTED_SENSOR:-}
+case "$detected" in
+  imx219|imx708|imx415) ;;
+  *) echo "Unsupported or missing detected sensor: ${detected:-none}" >&2; exit 1 ;;
+esac
+
+if [[ "$selected" != auto && "$selected" != "$detected" ]]; then
+  echo "Configured camera '$selected' does not match active sensor '$detected'." >&2
+  echo 'Run ti-k3-camera-select for the desired camera and reboot.' >&2
+  exit 1
+fi
+
+: "${TI_K3_CAMERA_VIDEO_DEVICE:?camera video device unresolved}"
+: "${TI_K3_CAMERA_SUBDEV_DEVICE:?camera subdevice unresolved}"
+: "${TI_K3_CAMERA_DCC_VISS:?VISS DCC unresolved}"
+: "${TI_K3_CAMERA_DCC_2A:?2A DCC unresolved}"
+[[ -e "$TI_K3_CAMERA_VIDEO_DEVICE" ]] || {
+  echo "Missing camera capture device: $TI_K3_CAMERA_VIDEO_DEVICE" >&2
+  exit 1
+}
+[[ -e "$TI_K3_CAMERA_SUBDEV_DEVICE" ]] || {
+  echo "Missing camera subdevice: $TI_K3_CAMERA_SUBDEV_DEVICE" >&2
+  exit 1
+}
+[[ -s "$TI_K3_CAMERA_DCC_VISS" ]] || {
+  echo "Missing VISS DCC: $TI_K3_CAMERA_DCC_VISS" >&2
+  exit 1
+}
+[[ -s "$TI_K3_CAMERA_DCC_2A" ]] || {
+  echo "Missing 2A DCC: $TI_K3_CAMERA_DCC_2A" >&2
+  exit 1
+}
+
+cat > /run/ti-k3/camera-selection.env <<EOF_READY
+TI_K3_CAMERA_CONFIGURED_SELECTION=$selected
+TI_K3_CAMERA_DETECTED_SENSOR=$detected
+TI_K3_CAMERA_READY=yes
+EOF_READY
+chmod 0644 /run/ti-k3/camera-selection.env
+
+printf 'Prepared selected TI K3 camera: configured=%s detected=%s video=%s subdev=%s\n' \
+  "$selected" "$detected" "$TI_K3_CAMERA_VIDEO_DEVICE" "$TI_K3_CAMERA_SUBDEV_DEVICE"

@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepare selected BeagleY-AI CSI camera through TI K3 imaging accelerators
+After=ti-k3-remoteproc-prepare.service ti-k3-remote-log.service
+Requires=ti-k3-remoteproc-prepare.service
+Wants=ti-k3-remote-log.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/ti-k3/accelerators.env
+EnvironmentFile=-/etc/ti-k3/gstreamer.env
+ExecStart=/usr/local/sbin/ti-k3-persistent-run camera-prepare /usr/local/sbin/ti-k3-camera-prepare
+RemainAfterExit=yes
+TimeoutStartSec=90
