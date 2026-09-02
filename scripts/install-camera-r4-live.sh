@@ -15,17 +15,30 @@ case "${1:-}" in
   *) echo "Usage: sudo $0 [--start]" >&2; exit 2 ;;
 esac
 
-for path in \
-  usr/local/sbin/ti-k3-camera-select \
-  usr/local/sbin/ti-k3-camera-setup \
-  usr/local/sbin/ti-k3-camera-prepare \
-  etc/systemd/system/ti-k3-camera-prepare.service \
-  etc/systemd/system/ti-k3-imx219-prepare.service; do
-  [[ -s "$overlay/$path" ]] || { echo "Missing R4 overlay file: $overlay/$path" >&2; exit 1; }
+camera_scripts=(
+  ti-k3-camera-select
+  ti-k3-camera-setup
+  ti-k3-camera-prepare
+  ti-k3-find-camera-devices
+  ti-k3-configure-imx219-graph
+  ti-k3-configure-imx708-graph
+  ti-k3-configure-imx415-graph
+)
+for s in "${camera_scripts[@]}"; do
+  [[ -s "$overlay/usr/local/sbin/$s" ]] || {
+    echo "Missing R4 camera script: $overlay/usr/local/sbin/$s" >&2
+    exit 1
+  }
+done
+for u in ti-k3-camera-prepare.service ti-k3-imx219-prepare.service; do
+  [[ -s "$overlay/etc/systemd/system/$u" ]] || {
+    echo "Missing R4 camera unit: $overlay/etc/systemd/system/$u" >&2
+    exit 1
+  }
 done
 
 install -d -m 0755 /usr/local/sbin /etc/systemd/system /etc/ti-k3
-for s in ti-k3-camera-select ti-k3-camera-setup ti-k3-camera-prepare; do
+for s in "${camera_scripts[@]}"; do
   install -m 0755 "$overlay/usr/local/sbin/$s" "/usr/local/sbin/$s"
 done
 for u in ti-k3-camera-prepare.service ti-k3-imx219-prepare.service; do
@@ -34,7 +47,7 @@ done
 
 systemctl daemon-reload
 
-echo 'Installed TI K3 R4 unified camera selector.'
+echo 'Installed TI K3 R4 unified camera selector and all three graph helpers.'
 ti-k3-camera-select status || true
 
 if [[ "$start" == yes ]]; then
