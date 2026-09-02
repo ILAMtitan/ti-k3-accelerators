@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
- * BeagleY-AI CSI0 + Arducam B0569 (Sony IMX415), provisional R0.
+ * BeagleY-AI CSI0 + Arducam B0569 (Sony IMX415), R3 stability checkpoint.
  *
  * Intended fast-path profile:
  *   sensor:           Sony IMX415
@@ -11,9 +11,9 @@
  *   sensor output:    3864x2192 SGBRG10, about 30 fps
  *
  * The exact v6.12.49-ti-arm64-r56 driver supports the 2-lane 1.44-Gb/s
- * mode with 24-MHz INCK. reset-gpios is intentionally omitted in R0 because
- * reset is optional in the driver and B0569 connector/XCLR wiring is not yet
- * verified on BeagleY-AI.
+ * mode with 24-MHz INCK. MCU_GPIO0_15 is qualified as the active-low reset
+ * control for the tested 0x37 B0569 module. The IMX415 driver owns this line
+ * through reset-gpios for deterministic runtime-PM and warm-reboot recovery.
  *
  * The three sensor supply requests are provisionally parented to the camera
  * connector 3.3-V rail, assuming B0569 provides local sensor regulation.
@@ -28,6 +28,18 @@
 		#clock-cells = <0>;
 		clock-frequency = <24000000>;
 	};
+};
+
+&mcu_pmx0 {
+	b0569_csi0_37_reset_pins_default: b0569-csi0-37-reset-default-pins {
+		pinctrl-single,pins = <
+			0x003c 0x00010007
+		>;
+	};
+};
+
+&mcu_gpio0 {
+	status = "okay";
 };
 
 &main_pmx0 {
@@ -57,6 +69,10 @@
 		avdd-supply = <&vdd_3v3>;
 		dvdd-supply = <&vdd_3v3>;
 		ovdd-supply = <&vdd_3v3>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&b0569_csi0_37_reset_pins_default>;
+		reset-gpios = <&mcu_gpio0 15 1>;
 
 		port {
 			b0569_imx415_37_out: endpoint {

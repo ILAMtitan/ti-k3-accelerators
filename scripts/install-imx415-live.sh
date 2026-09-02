@@ -9,6 +9,7 @@ KBUILD=/lib/modules/$KVER/build
 WORK=${WORK:-/var/tmp/ti-k3-imx415-live-$KVER}
 DRIVER_REF=v6.12.49-ti-arm64-r56
 DRIVER_URL=${IMX415_SOURCE_URL:-https://raw.githubusercontent.com/beagleboard/linux/${DRIVER_REF}/drivers/media/i2c/imx415.c}
+DRIVER_PATCH="$root/armbian/userpatches/kernel/archive/k3-beagle-6.12/0007-media-i2c-imx415-extend-reset-settle-time.patch"
 DT_DIR="$root/armbian/userpatches/kernel/archive/k3-beagle-6.12/dt"
 BOOT_DTB_DIR=/boot/dtb/ti
 
@@ -40,7 +41,7 @@ while (($#)); do
   esac
 done
 
-for cmd in make gcc curl install depmod modinfo uname; do
+for cmd in make gcc curl install depmod modinfo uname patch; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
 
@@ -59,11 +60,18 @@ mkdir -p "$WORK"
 
 if grep -q '^CONFIG_VIDEO_IMX415=y$' "/boot/config-$KVER" 2>/dev/null; then
   echo "[module] CONFIG_VIDEO_IMX415=y; driver is built into the running kernel"
-elif modinfo -k "$KVER" imx415 >/dev/null 2>&1; then
-  echo "[module] imx415 already exists for $KVER; skipping external build"
 else
   echo "[module] fetching exact Beagle 6.12.49 IMX415 source ($DRIVER_REF)"
   curl --fail --location --retry 5 "$DRIVER_URL" -o "$WORK/imx415.c"
+
+  [[ -s "$DRIVER_PATCH" ]] || {
+    echo "Missing IMX415 R3 driver patch: $DRIVER_PATCH" >&2
+    exit 1
+  }
+
+  echo "[module] applying IMX415 R3 reset-settle patch"
+  patch -d "$WORK" -p4 < "$DRIVER_PATCH"
+
   cat >"$WORK/Makefile" <<'EOF_MAKE'
 obj-m += imx415.o
 EOF_MAKE

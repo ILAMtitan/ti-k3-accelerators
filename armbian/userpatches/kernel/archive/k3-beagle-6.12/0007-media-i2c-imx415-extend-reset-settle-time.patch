@@ -1,0 +1,29 @@
+From 5af6cbc12de910f57195ab09c2dbe19e70bf04e5 Mon Sep 17 00:00:00 2001
+From: OpenHD Porting <openhd-porting@localhost>
+Date: Wed, 2 Sep 2026 11:28:58 -0500
+Subject: [PATCH] media: i2c: imx415: extend reset settle time
+
+---
+ drivers/media/i2c/imx415.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/i2c/imx415.c b/drivers/media/i2c/imx415.c
+index a20b0db..8694edd 100644
+--- a/drivers/media/i2c/imx415.c
++++ b/drivers/media/i2c/imx415.c
+@@ -1157,7 +1157,11 @@ static int imx415_power_on(struct imx415 *sensor)
+ 	 * but this doesn't work in all cases. Use 100 us to be on the safe
+ 	 * side.
+ 	 */
+-	usleep_range(100, 200);
++	/*
++	 * The B0569 module requires additional settling time after reset
++	 * release before its register interface is reliably accessible.
++	 */
++	usleep_range(20000, 22000);
+ 
+ 	return 0;
+ 
+-- 
+2.53.0
+
